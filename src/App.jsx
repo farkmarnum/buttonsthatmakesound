@@ -148,7 +148,7 @@ const Pad = forwardRef(function Pad({ label }, ref) {
     if (recordingRef.current) stopRecording();
   }, [stopRecording]);
 
-  useImperativeHandle(ref, () => ({ trigger, release }), [trigger, release]);
+  useImperativeHandle(ref, () => ({ trigger, release, reset }), [trigger, release, reset]);
 
   const onPointerDown = useCallback((e) => trigger(e.shiftKey), [trigger]);
   const onPointerUp = useCallback(() => release(), [release]);
@@ -205,11 +205,18 @@ export default function App() {
     };
   }, []);
 
+  const clearAll = useCallback(() => {
+    padRefs.current.forEach((r) => r.current?.reset());
+  }, []);
+
   return (
     <div className="board">
       {KEYS.map((key, i) => (
         <Pad key={key} label={key} ref={padRefs.current[i]} />
       ))}
+      <button type="button" className="clear-all" onClick={clearAll}>
+        clear all
+      </button>
     </div>
   );
 }
