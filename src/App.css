@@ -39,6 +39,7 @@
   transition: background 0.15s;
   user-select: none;
   -webkit-user-select: none;
+  touch-action: manipulation;
   color: transparent;
 }
 

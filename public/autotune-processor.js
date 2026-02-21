@@ -202,7 +202,7 @@ class AutotuneProcessor extends AudioWorkletProcessor {
     const output = outputs[0]?.[0];
     if (!input || !output) return true;
 
-    const retune = parameters.retune.length > 1 ? parameters.retune[0] : parameters.retune[0];
+    const retune = parameters.retune[0];
     if (retune === 0) {
       output.set(input);
       return true;

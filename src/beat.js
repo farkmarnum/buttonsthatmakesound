@@ -11,6 +11,8 @@ let timerID = null;
 let pattern = "basic";
 let beatGain = null;
 let drumBus = null; // internal node synths connect to
+let snareNoiseBuf = null;
+let hihatNoiseBuf = null;
 
 // patterns: 16-step, each step has [kick, snare, hihat]
 const PATTERNS = {
@@ -124,6 +126,17 @@ function initBus(ctx) {
     .connect(saturator)
     .connect(beatGain)
     .connect(ctx.destination);
+
+  // Pre-generate noise buffers (reused every hit)
+  const snareLen = ctx.sampleRate * 0.15;
+  snareNoiseBuf = ctx.createBuffer(1, snareLen, ctx.sampleRate);
+  const sd = snareNoiseBuf.getChannelData(0);
+  for (let i = 0; i < snareLen; i++) sd[i] = Math.random() * 2 - 1;
+
+  const hhLen = ctx.sampleRate * 0.05;
+  hihatNoiseBuf = ctx.createBuffer(1, hhLen, ctx.sampleRate);
+  const hd = hihatNoiseBuf.getChannelData(0);
+  for (let i = 0; i < hhLen; i++) hd[i] = Math.random() * 2 - 1;
 }
 
 function synthKick(ctx, dest, time) {
@@ -140,13 +153,8 @@ function synthKick(ctx, dest, time) {
 }
 
 function synthSnare(ctx, dest, time) {
-  // noise burst
-  const len = ctx.sampleRate * 0.15;
-  const buf = ctx.createBuffer(1, len, ctx.sampleRate);
-  const d = buf.getChannelData(0);
-  for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
   const noise = ctx.createBufferSource();
-  noise.buffer = buf;
+  noise.buffer = snareNoiseBuf;
   const nG = ctx.createGain();
   nG.gain.setValueAtTime(0.5, time);
   nG.gain.exponentialRampToValueAtTime(0.001, time + 0.15);
@@ -170,12 +178,8 @@ function synthSnare(ctx, dest, time) {
 }
 
 function synthHihat(ctx, dest, time) {
-  const len = ctx.sampleRate * 0.05;
-  const buf = ctx.createBuffer(1, len, ctx.sampleRate);
-  const d = buf.getChannelData(0);
-  for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
   const src = ctx.createBufferSource();
-  src.buffer = buf;
+  src.buffer = hihatNoiseBuf;
   const g = ctx.createGain();
   g.gain.setValueAtTime(0.25, time);
   g.gain.exponentialRampToValueAtTime(0.001, time + 0.05);

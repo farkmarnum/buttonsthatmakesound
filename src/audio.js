@@ -156,6 +156,7 @@ export async function acquireMic() {
 }
 
 export function getMicStream() {
+  if (!micStream) throw new Error("Microphone not available. Please grant mic access and reload.");
   return micStream;
 }
 

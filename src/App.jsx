@@ -1,252 +1,31 @@
-import { useState, useRef, useCallback, useEffect, useImperativeHandle, forwardRef } from "react";
+import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { saveGrid, updateGrid, renameGrid, listGrids, loadGrid, deleteGrid, getActiveId, setActiveId } from "./db.js";
-import { getAudioContext, createPadNode, destroyPadNode, flushPadNode, setCompressorMix, setReverbMix, setRetune, setScale, initAll, getMicStream } from "./audio.js";
+import { setCompressorMix, setReverbMix, setRetune, setScale, initAll } from "./audio.js";
 import { startBeat, stopBeat, isPlaying, setBpm, setPattern, setBeatVolume } from "./beat.js";
+import { Pad } from "./Pad.jsx";
+import useStateRef from "./useStateRef.js";
 import "./App.css";
 
 const NOTE_NAMES = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
 const SCALE_TYPES = ["chromatic","major","minor","pentatonic"];
 const BEAT_PATTERNS = ["basic","hiphop","halftime"];
-
 const KEYS = ["q","w","e","r","a","s","d","f","u","i","o","p","j","k","l",";"];
-const SILENCE_THRESHOLD = 0.075;
 
-function randomHue() {
-  return Math.floor(Math.random() * 360);
+const DEFAULT_FX = {
+  compress: 30, reverb: 50, retune: 50,
+  tonic: 0, scaleType: "chromatic",
+  tempo: 100, beatVol: 60, beatPattern: "basic",
+};
+
+function nextGridName(grids) {
+  const used = new Set(grids.map((g) => g.name));
+  let n = 1;
+  while (used.has(`Grid ${n}`)) n++;
+  return `Grid ${n}`;
 }
-
-async function trimSilence(blob) {
-  const ctx = new OfflineAudioContext(1, 1, 44100);
-  const buf = await ctx.decodeAudioData(await blob.arrayBuffer());
-  const data = buf.getChannelData(0);
-
-  let start = 0;
-  // trim silence from start:
-  while (start < data.length && Math.abs(data[start]) < SILENCE_THRESHOLD)
-    start++;
-  const end = data.length - 1;
-
-  // this would trim silence from end:
-  // while (end > start && Math.abs(data[end]) < SILENCE_THRESHOLD) end--;
-
-  if (start >= end) return blob;
-
-  const trimmed = new AudioContext();
-  const len = end - start + 1;
-  const fadeSamples = Math.min(Math.ceil(buf.sampleRate * 0.002), len); // 2ms
-  const trimBuf = trimmed.createBuffer(buf.numberOfChannels, len, buf.sampleRate);
-  for (let ch = 0; ch < buf.numberOfChannels; ch++) {
-    const slice = buf.getChannelData(ch).slice(start, end + 1);
-    for (let i = 0; i < fadeSamples; i++) {
-      slice[i] *= i / fadeSamples;
-      slice[slice.length - 1 - i] *= i / fadeSamples;
-    }
-    trimBuf.copyToChannel(slice, ch);
-  }
-  trimmed.close();
-
-  const numCh = trimBuf.numberOfChannels;
-  const sr = trimBuf.sampleRate;
-  const samples = trimBuf.length;
-  const bitsPerSample = 16;
-  const byteRate = sr * numCh * (bitsPerSample / 8);
-  const dataSize = samples * numCh * (bitsPerSample / 8);
-  const buffer = new ArrayBuffer(44 + dataSize);
-  const view = new DataView(buffer);
-
-  const writeStr = (off, str) => {
-    for (let i = 0; i < str.length; i++) view.setUint8(off + i, str.charCodeAt(i));
-  };
-  writeStr(0, "RIFF");
-  view.setUint32(4, 36 + dataSize, true);
-  writeStr(8, "WAVE");
-  writeStr(12, "fmt ");
-  view.setUint32(16, 16, true);
-  view.setUint16(20, 1, true);
-  view.setUint16(22, numCh, true);
-  view.setUint32(24, sr, true);
-  view.setUint32(28, byteRate, true);
-  view.setUint16(32, numCh * (bitsPerSample / 8), true);
-  view.setUint16(34, bitsPerSample, true);
-  writeStr(36, "data");
-  view.setUint32(40, dataSize, true);
-
-  let offset = 44;
-  for (let i = 0; i < samples; i++) {
-    for (let ch = 0; ch < numCh; ch++) {
-      const s = Math.max(-1, Math.min(1, trimBuf.getChannelData(ch)[i]));
-      view.setInt16(offset, s * 0x7fff, true);
-      offset += 2;
-    }
-  }
-
-  return new Blob([buffer], { type: "audio/wav" });
-}
-
-const Pad = forwardRef(function Pad({ label, shiftHeld, onErase, onChanged }, ref) {
-  const [hue, setHue] = useState(null);
-  const [playing, setPlaying] = useState(false);
-  const [recording, setRecording] = useState(false);
-  const [hasSound, setHasSound] = useState(false);
-  const audioRef = useRef(null);   // blob URL
-  const blobRef = useRef(null);    // raw blob for serialization
-  const mediaRecRef = useRef(null);
-  const playerRef = useRef(null);
-  const recordingRef = useRef(false);
-
-  const decodedRef = useRef(null); // cached AudioBuffer
-  const autotuneRef = useRef(null); // per-pad autotune worklet node
-
-  // Create this pad's autotune node lazily on first play
-  const ensureAutotuneNode = useCallback(async () => {
-    if (!autotuneRef.current) {
-      autotuneRef.current = await createPadNode();
-    }
-    return autotuneRef.current;
-  }, []);
-
-  // Cleanup on unmount
-  useEffect(() => () => destroyPadNode(autotuneRef.current), []);
-
-  const stopPlayback = useCallback(() => {
-    if (playerRef.current) {
-      try { playerRef.current.stop(); } catch { /* already stopped */ }
-      playerRef.current.disconnect();
-      playerRef.current = null;
-    }
-    flushPadNode(autotuneRef.current);
-    setPlaying(false);
-  }, []);
-
-  const play = useCallback(async () => {
-    stopPlayback();
-    const actx = await getAudioContext();
-    if (!decodedRef.current && blobRef.current) {
-      decodedRef.current = await actx.decodeAudioData(await blobRef.current.arrayBuffer());
-    }
-    if (!decodedRef.current) return;
-    const node = await ensureAutotuneNode();
-    const src = actx.createBufferSource();
-    src.buffer = decodedRef.current;
-    src.connect(node);
-    src.onended = () => setPlaying(false);
-    playerRef.current = src;
-    setPlaying(true);
-    src.start();
-  }, [stopPlayback, ensureAutotuneNode]);
-
-  const startRecording = useCallback(() => {
-    stopPlayback();
-    const stream = getMicStream();
-    if (!stream) return;
-    const mr = new MediaRecorder(stream);
-    const chunks = [];
-    mr.ondataavailable = (e) => chunks.push(e.data);
-    mr.onstop = async () => {
-      if (chunks.length) {
-        const raw = new Blob(chunks, { type: "audio/webm" });
-        const trimmed = await trimSilence(raw);
-        if (audioRef.current) URL.revokeObjectURL(audioRef.current);
-        blobRef.current = trimmed;
-        decodedRef.current = null;
-        audioRef.current = URL.createObjectURL(trimmed);
-        setHasSound(true);
-        setHue(randomHue());
-        onChanged?.();
-      }
-      setRecording(false);
-      recordingRef.current = false;
-    };
-    mediaRecRef.current = mr;
-    mr.start();
-    setRecording(true);
-    recordingRef.current = true;
-  }, [stopPlayback, onChanged]);
-
-  const stopRecording = useCallback(() => {
-    if (mediaRecRef.current?.state === "recording") {
-      mediaRecRef.current.stop();
-      mediaRecRef.current = null;
-    }
-  }, []);
-
-  const reset = useCallback(() => {
-    stopPlayback();
-    if (audioRef.current) URL.revokeObjectURL(audioRef.current);
-    audioRef.current = null;
-    blobRef.current = null;
-    decodedRef.current = null;
-    setHasSound(false);
-    setHue(null);
-  }, [stopPlayback]);
-
-  const trigger = useCallback(
-    (shiftKey) => {
-      if (shiftKey) { reset(); onErase?.(); return; }
-      if (hasSound) { play(); return; }
-      startRecording();
-    },
-    [hasSound, play, startRecording, reset, onErase],
-  );
-
-  const release = useCallback(() => {
-    if (recordingRef.current) stopRecording();
-  }, [stopRecording]);
-
-  const getState = useCallback(() => ({
-    hue,
-    blob: blobRef.current,
-  }), [hue]);
-
-  const loadState = useCallback((state) => {
-    stopPlayback();
-    if (audioRef.current) URL.revokeObjectURL(audioRef.current);
-    decodedRef.current = null;
-    if (state?.blob) {
-      blobRef.current = state.blob;
-      audioRef.current = URL.createObjectURL(state.blob);
-      setHasSound(true);
-      setHue(state.hue);
-    } else {
-      blobRef.current = null;
-      audioRef.current = null;
-      setHasSound(false);
-      setHue(null);
-    }
-  }, [stopPlayback]);
-
-  useImperativeHandle(ref, () => ({ trigger, release, reset, stopPlayback, getState, loadState }), [trigger, release, reset, stopPlayback, getState, loadState]);
-
-  const onPointerDown = useCallback(() => trigger(shiftHeld), [trigger, shiftHeld]);
-  const onPointerUp = useCallback(() => release(), [release]);
-
-  let bg;
-  if (recording) {
-    bg = "hsl(0 90% 50%)";
-  } else if (hue !== null) {
-    bg = playing ? `hsl(${hue} 90% 60%)` : `hsl(${hue} 50% 40%)`;
-  } else {
-    bg = "#555";
-  }
-
-  return (
-    <button
-      type="button"
-      className="pad"
-      style={{ background: bg }}
-      onPointerDown={onPointerDown}
-      onPointerUp={onPointerUp}
-      onPointerLeave={onPointerUp}
-    >
-      {shiftHeld && hasSound && <span className="pad-delete">-</span>}
-      {recording ? "REC" : label}
-    </button>
-  );
-});
 
 function StartModal({ onReady }) {
   const [error, setError] = useState(null);
-
   const handleStart = useCallback(async () => {
     try {
       await initAll();
@@ -261,9 +40,7 @@ function StartModal({ onReady }) {
       <div className="modal">
         <h1>buttons that make sound</h1>
         {error && <p className="modal-error">{error}</p>}
-        <button type="button" className="modal-start" onClick={handleStart}>
-          Start
-        </button>
+        <button type="button" className="modal-start" onClick={handleStart}>Start</button>
       </div>
     </div>
   );
@@ -284,84 +61,123 @@ function Panel({ open, onClose, title, children }) {
   );
 }
 
-const padRefs = KEYS.map(() => ({ current: null }));
-
-function nextGridName(grids) {
-  const used = new Set(grids.map((g) => g.name));
-  let n = 1;
-  while (used.has(`Grid ${n}`)) n++;
-  return `Grid ${n}`;
-}
-
-function getPadStates() {
-  return padRefs.map((r) => r.current?.getState() ?? { hue: null, blob: null });
-}
-
-function loadPadStates(pads) {
-  pads.forEach((state, i) => { padRefs[i].current?.loadState(state); });
-}
-
 export default function App() {
   const [ready, setReady] = useState(false);
   const heldKeys = useRef(new Set());
-  const [savedGrids, setSavedGrids] = useState([]);
-  const [shiftHeld, setShiftHeld] = useState(false);
-  const shiftRef = useRef(false);
+
+  // #10: padRefs inside component, stable across renders
+  const padRefs = useMemo(() => KEYS.map(() => ({ current: null })), []);
+
+  // #7+8+9: consolidated state+ref pairs (eliminates dual-update fragility)
+  const [shiftHeld, setShiftHeld, shiftRef] = useStateRef(false);
+  const [savedGrids, setSavedGrids, savedGridsRef] = useStateRef([]);
+  const [activeId, setActiveIdLocal, activeIdRef] = useStateRef(null);
+  const [openPanel, setOpenPanel, openPanelRef] = useStateRef(null);
+
+  const [activeName, setActiveName] = useState("Grid 1");
   const [beatOn, setBeatOn] = useState(false);
-  const [openPanel, setOpenPanel] = useState(null);
-  const [tempo, setTempo] = useState(100);
-  const [beatVol, setBeatVol] = useState(60);
   const [hasAnySounds, setHasAnySounds] = useState(false);
+  const [renamingId, setRenamingId] = useState(null);
+  const pendingLoad = useRef(null);
+  const autoSaveTimer = useRef(null);
 
   // FX state
-  const [compress, setCompress] = useState(30);
-  const [reverb, setReverb] = useState(50);
-  const [retune, setRetuneVal] = useState(50);
-  const [tonic, setTonic] = useState(0);
-  const [scaleType, setScaleType] = useState("chromatic");
+  const [compress, setCompress] = useState(DEFAULT_FX.compress);
+  const [reverb, setReverb] = useState(DEFAULT_FX.reverb);
+  const [retune, setRetuneVal] = useState(DEFAULT_FX.retune);
+  const [tonic, setTonic] = useState(DEFAULT_FX.tonic);
+  const [scaleType, setScaleType] = useState(DEFAULT_FX.scaleType);
+  const [tempo, setTempo] = useState(DEFAULT_FX.tempo);
+  const [beatVol, setBeatVol] = useState(DEFAULT_FX.beatVol);
+  // #1: beatPattern is controlled state (fixes desync on panel reopen)
+  const [beatPattern, setBeatPatternState] = useState(DEFAULT_FX.beatPattern);
 
-  // Active grid tracking
-  const [activeId, setActiveIdState] = useState(null);
-  const [activeName, setActiveName] = useState("Grid 1");
-  const activeIdRef = useRef(null);
-  const autoSaveTimer = useRef(null);
-  const [renamingId, setRenamingId] = useState(null);
-  const savedGridsRef = useRef([]);
-  const pendingLoad = useRef(null);
+  // #17: fxRef mirrors current FX for reading in callbacks without stale closures
+  const fxRef = useRef({ ...DEFAULT_FX });
+
+  // #7: consolidated activeId setter (state + ref + db in one call)
+  const setActiveGrid = useCallback(async (id) => {
+    setActiveIdLocal(id);
+    await setActiveId(id);
+  }, [setActiveIdLocal]);
+
+  const getPadStates = useCallback(() => {
+    return padRefs.map((r) => r.current?.getState() ?? { hue: null, blob: null });
+  }, [padRefs]);
+
+  const loadPadStates = useCallback((pads) => {
+    pads.forEach((state, i) => { padRefs[i].current?.loadState(state); });
+  }, [padRefs]);
+
+  // #17: apply FX settings to React state + audio engine + fxRef
+  const applyFx = useCallback((fx) => {
+    if (!fx) return;
+    const c = fx.compress ?? DEFAULT_FX.compress;
+    const r = fx.reverb ?? DEFAULT_FX.reverb;
+    const rt = fx.retune ?? DEFAULT_FX.retune;
+    const t = fx.tonic ?? DEFAULT_FX.tonic;
+    const s = fx.scaleType ?? DEFAULT_FX.scaleType;
+    const tp = fx.tempo ?? DEFAULT_FX.tempo;
+    const bv = fx.beatVol ?? DEFAULT_FX.beatVol;
+    const bp = fx.beatPattern ?? DEFAULT_FX.beatPattern;
+    setCompress(c); setReverb(r); setRetuneVal(rt);
+    setTonic(t); setScaleType(s);
+    setTempo(tp); setBeatVol(bv); setBeatPatternState(bp);
+    setCompressorMix(c / 100); setReverbMix(r / 100); setRetune(rt / 100);
+    setScale(t, s); setBpm(tp); setBeatVolume(bv / 100); setPattern(bp);
+    fxRef.current = { compress: c, reverb: r, retune: rt, tonic: t, scaleType: s, tempo: tp, beatVol: bv, beatPattern: bp };
+  }, []);
 
   const refreshList = useCallback(async () => {
     const grids = await listGrids();
-    savedGridsRef.current = grids;
     setSavedGrids(grids);
-  }, []);
+  }, [setSavedGrids]);
 
-  // Auto-save: debounced persist of current grid
+  // #2: autoSave reads current state at fire time (safe because flushAutoSave
+  // is called before any grid switch, preventing stale-grid saves)
   const autoSave = useCallback(() => {
     clearTimeout(autoSaveTimer.current);
     autoSaveTimer.current = setTimeout(async () => {
       const pads = getPadStates();
       const id = activeIdRef.current;
+      const fx = { ...fxRef.current };
       if (id) {
-        await updateGrid(id, pads);
+        await updateGrid(id, pads, fx);
       } else {
-        // Create a new grid
         const newId = crypto.randomUUID();
         const name = nextGridName(savedGridsRef.current);
-        await saveGrid(newId, name, pads);
-        await setActiveId(newId);
-        activeIdRef.current = newId;
-        setActiveIdState(newId);
+        await saveGrid(newId, name, pads, fx);
+        setActiveGrid(newId);
         setActiveName(name);
       }
       refreshList();
     }, 800);
-  }, [refreshList]);
+  }, [getPadStates, activeIdRef, savedGridsRef, setActiveGrid, refreshList]);
+
+  // #2: flush pending auto-save immediately (called before grid switches)
+  const flushAutoSave = useCallback(async () => {
+    if (!autoSaveTimer.current) return;
+    clearTimeout(autoSaveTimer.current);
+    autoSaveTimer.current = null;
+    const id = activeIdRef.current;
+    if (id) {
+      await updateGrid(id, getPadStates(), { ...fxRef.current });
+    }
+  }, [getPadStates, activeIdRef]);
+
+  // #5: clean up auto-save timer on unmount
+  useEffect(() => () => clearTimeout(autoSaveTimer.current), []);
+
+  // #17: helper to update a single FX ref field + trigger auto-save
+  const saveFxChange = useCallback((key, value) => {
+    fxRef.current = { ...fxRef.current, [key]: value };
+    if (activeIdRef.current) autoSave();
+  }, [autoSave, activeIdRef]);
 
   const recheckSounds = useCallback(() => {
     setHasAnySounds(padRefs.some((r) => r.current?.getState()?.blob));
-  }, []);
+  }, [padRefs]);
 
-  // Notify auto-save after pad changes
   const onPadChanged = useCallback(() => {
     recheckSounds();
     autoSave();
@@ -369,7 +185,7 @@ export default function App() {
 
   const togglePanel = useCallback((name) => {
     setOpenPanel((cur) => cur === name ? null : name);
-  }, []);
+  }, [setOpenPanel]);
 
   const toggleBeat = useCallback(async () => {
     if (isPlaying()) {
@@ -384,48 +200,45 @@ export default function App() {
   // Apply pending grid once pads are mounted
   useEffect(() => {
     if (ready && pendingLoad.current) {
-      loadPadStates(pendingLoad.current);
+      loadPadStates(pendingLoad.current.pads);
+      applyFx(pendingLoad.current.fx);
       pendingLoad.current = null;
     }
-  }, [ready]);
+  }, [ready, loadPadStates, applyFx]);
 
   // Load last active grid on startup
   useEffect(() => {
     (async () => {
       const grids = await listGrids();
-      savedGridsRef.current = grids;
       setSavedGrids(grids);
       const id = await getActiveId();
       if (id) {
         const grid = await loadGrid(id);
         if (grid) {
-          activeIdRef.current = id;
-          setActiveIdState(id);
+          setActiveIdLocal(id);
           setActiveName(grid.name);
           setHasAnySounds(grid.pads.some((p) => p?.blob));
-          pendingLoad.current = grid.pads;
+          pendingLoad.current = { pads: grid.pads, fx: grid.fx };
           return;
         }
       }
-      // No active grid — start fresh
-      activeIdRef.current = null;
-      setActiveIdState(null);
+      setActiveIdLocal(null);
       setActiveName(nextGridName(grids));
     })();
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // #18: keyboard handler reads openPanel via ref — no listener churn on panel toggle
   useEffect(() => {
     const onKeyDown = (e) => {
       if (e.repeat || e.metaKey || e.ctrlKey) return;
       if (e.key.toLowerCase() === "x") {
         e.preventDefault();
-        shiftRef.current = !shiftRef.current;
-        setShiftHeld(shiftRef.current);
+        setShiftHeld((v) => !v);
         return;
       }
       if (e.key === "Escape") {
         e.preventDefault();
-        if (openPanel) { setOpenPanel(null); return; }
+        if (openPanelRef.current) { setOpenPanel(null); return; }
         padRefs.forEach((r) => r.current?.release());
         padRefs.forEach((r) => r.current?.stopPlayback());
         return;
@@ -455,72 +268,62 @@ export default function App() {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
     };
-  }, [toggleBeat, openPanel]);
+  }, [toggleBeat, padRefs, setShiftHeld, shiftRef, openPanelRef, setOpenPanel]);
 
   const checkEraseOff = useCallback(() => {
     const anyHaveSound = padRefs.some((r) => r.current?.getState()?.blob);
-    if (!anyHaveSound) {
-      shiftRef.current = false;
-      setShiftHeld(false);
-    }
+    if (!anyHaveSound) setShiftHeld(false);
     onPadChanged();
-  }, [onPadChanged]);
+  }, [padRefs, setShiftHeld, onPadChanged]);
 
-  // "New" — blank grid, new slot
   const handleNew = useCallback(async () => {
-    padRefs.forEach((r) => r.current?.reset());
-    shiftRef.current = false;
+    await flushAutoSave();
+    padRefs.forEach((r) => r.current?.loadState(null));
     setShiftHeld(false);
+    applyFx(DEFAULT_FX);
     const newId = crypto.randomUUID();
     const name = nextGridName(savedGridsRef.current);
-    await saveGrid(newId, name, getPadStates());
-    await setActiveId(newId);
-    activeIdRef.current = newId;
-    setActiveIdState(newId);
+    await saveGrid(newId, name, getPadStates(), DEFAULT_FX);
+    await setActiveGrid(newId);
     setActiveName(name);
     refreshList();
-  }, [refreshList]);
+  }, [flushAutoSave, padRefs, setShiftHeld, applyFx, savedGridsRef, getPadStates, setActiveGrid, refreshList]);
 
-  // "Save as" — copy current grid to a new named slot
   const handleSaveAs = useCallback(async () => {
     const name = prompt("Name this grid:");
     if (!name) return;
     const pads = getPadStates();
+    const fx = { ...fxRef.current };
     const newId = crypto.randomUUID();
-    await saveGrid(newId, name, pads);
-    await setActiveId(newId);
-    activeIdRef.current = newId;
-    setActiveIdState(newId);
+    await saveGrid(newId, name, pads, fx);
+    await setActiveGrid(newId);
     setActiveName(name);
     refreshList();
-  }, [refreshList]);
+  }, [getPadStates, setActiveGrid, refreshList]);
 
   const handleLoad = useCallback(async (id) => {
+    await flushAutoSave();
     const grid = await loadGrid(id);
     if (!grid) return;
     loadPadStates(grid.pads);
-    await setActiveId(id);
-    activeIdRef.current = id;
-    setActiveIdState(id);
+    applyFx(grid.fx);
+    await setActiveGrid(id);
     setActiveName(grid.name);
     setOpenPanel(null);
     recheckSounds();
-  }, [recheckSounds]);
+  }, [flushAutoSave, loadPadStates, applyFx, setActiveGrid, setOpenPanel, recheckSounds]);
 
   const handleDelete = useCallback(async (id) => {
+    await flushAutoSave();
     await deleteGrid(id);
     if (activeIdRef.current === id) {
-      // Deleted the active grid — start fresh
-      padRefs.forEach((r) => r.current?.reset());
-      activeIdRef.current = null;
-      setActiveIdState(null);
-      await setActiveId(null);
-      // Name will update after refreshList, compute with current knowledge
+      padRefs.forEach((r) => r.current?.loadState(null));
+      await setActiveGrid(null);
       const remaining = savedGridsRef.current.filter((g) => g.id !== id);
       setActiveName(nextGridName(remaining));
     }
     refreshList();
-  }, [refreshList]);
+  }, [flushAutoSave, activeIdRef, padRefs, savedGridsRef, setActiveGrid, refreshList]);
 
   const handleRename = useCallback(async (id, newName) => {
     if (!newName.trim()) return;
@@ -528,7 +331,7 @@ export default function App() {
     if (activeIdRef.current === id) setActiveName(newName.trim());
     refreshList();
     setRenamingId(null);
-  }, [refreshList]);
+  }, [activeIdRef, refreshList]);
 
   if (!ready) return <StartModal onReady={() => setReady(true)} />;
 
@@ -543,7 +346,7 @@ export default function App() {
         <button type="button" className="board-btn save-btn" onClick={handleSaveAs}>save as</button>
         <button type="button" className={`board-btn erase-btn ${shiftHeld ? "on" : ""}`}
           disabled={!hasAnySounds}
-          onClick={() => setShiftHeld((v) => { shiftRef.current = !v; return !v; })}>
+          onClick={() => setShiftHeld((v) => !v)}>
           erase
         </button>
         <button type="button" className="board-btn clear-btn" disabled={!hasAnySounds}
@@ -593,25 +396,37 @@ export default function App() {
           <label className="slider-label">
             compress
             <input type="range" min="0" max="100" value={compress}
-              onChange={(e) => { setCompress(Number(e.target.value)); setCompressorMix(e.target.value / 100); }} />
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                setCompress(v); setCompressorMix(v / 100);
+                saveFxChange("compress", v);
+              }} />
           </label>
           <label className="slider-label">
             reverb
             <input type="range" min="0" max="100" value={reverb}
-              onChange={(e) => { setReverb(Number(e.target.value)); setReverbMix(e.target.value / 100); }} />
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                setReverb(v); setReverbMix(v / 100);
+                saveFxChange("reverb", v);
+              }} />
           </label>
           <label className="slider-label">
             retune
             <input type="range" min="0" max="100" value={retune}
-              onChange={(e) => { setRetuneVal(Number(e.target.value)); setRetune(e.target.value / 100); }} />
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                setRetuneVal(v); setRetune(v / 100);
+                saveFxChange("retune", v);
+              }} />
           </label>
           <div className="scale-controls">
             <label className="select-label">
               key
               <select value={tonic} onChange={(e) => {
                 const v = parseInt(e.target.value);
-                setTonic(v);
-                setScale(v, scaleType);
+                setTonic(v); setScale(v, scaleType);
+                saveFxChange("tonic", v);
               }}>
                 {NOTE_NAMES.map((n, i) => <option key={n} value={i}>{n}</option>)}
               </select>
@@ -619,8 +434,8 @@ export default function App() {
             <label className="select-label">
               scale
               <select value={scaleType} onChange={(e) => {
-                setScaleType(e.target.value);
-                setScale(tonic, e.target.value);
+                setScaleType(e.target.value); setScale(tonic, e.target.value);
+                saveFxChange("scaleType", e.target.value);
               }}>
                 {SCALE_TYPES.map((s) => <option key={s} value={s}>{s}</option>)}
               </select>
@@ -635,21 +450,25 @@ export default function App() {
             {tempo} bpm
             <input type="range" min="60" max="180" value={tempo} onChange={(e) => {
               const v = Number(e.target.value);
-              setTempo(v);
-              setBpm(v);
+              setTempo(v); setBpm(v);
+              saveFxChange("tempo", v);
             }} />
           </label>
           <label className="slider-label">
             volume {beatVol}%
             <input type="range" min="0" max="100" value={beatVol} onChange={(e) => {
               const v = Number(e.target.value);
-              setBeatVol(v);
-              setBeatVolume(v / 100);
+              setBeatVol(v); setBeatVolume(v / 100);
+              saveFxChange("beatVol", v);
             }} />
           </label>
           <label className="select-label">
             pattern
-            <select defaultValue="basic" onChange={(e) => setPattern(e.target.value)}>
+            <select value={beatPattern} onChange={(e) => {
+              setBeatPatternState(e.target.value);
+              setPattern(e.target.value);
+              saveFxChange("beatPattern", e.target.value);
+            }}>
               {BEAT_PATTERNS.map((p) => <option key={p} value={p}>{p}</option>)}
             </select>
           </label>
