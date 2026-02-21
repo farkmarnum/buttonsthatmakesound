@@ -28,6 +28,22 @@ import { Pad } from "./Pad.jsx";
 import useStateRef from "./useStateRef.js";
 import "./App.css";
 
+function StopIcon() {
+  return (
+    <svg style={{marginTop: "2px"}} width="14" height="14" viewBox="0 0 12 12" fill="currentColor">
+      <rect x="1" y="1" width="10" height="10" rx="1" />
+    </svg>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <svg style={{marginTop: "2px"}} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14" />
+    </svg>
+  );
+}
+
 const NOTE_NAMES = [
   "C",
   "C#",
@@ -141,6 +157,8 @@ export default function App() {
   const [activeName, setActiveName] = useState("Grid 1");
   const [beatOn, setBeatOn] = useState(false);
   const [hasAnySounds, setHasAnySounds] = useState(false);
+  const playingPads = useRef(new Set());
+  const [anyPlaying, setAnyPlaying] = useState(false);
   const [renamingId, setRenamingId] = useState(null);
   const [renamingTitle, setRenamingTitle] = useState(false);
   const pendingLoad = useRef(null);
@@ -271,6 +289,20 @@ export default function App() {
     recheckSounds();
     autoSave();
   }, [autoSave, recheckSounds]);
+
+  const onPadPlayingChange = useCallback((padLabel, isPlaying) => {
+    if (isPlaying) {
+      playingPads.current.add(padLabel);
+    } else {
+      playingPads.current.delete(padLabel);
+    }
+    setAnyPlaying(playingPads.current.size > 0);
+  }, []);
+
+  const stopAllSounds = useCallback(() => {
+    padRefs.forEach((r) => r.current?.release());
+    padRefs.forEach((r) => r.current?.stopPlayback());
+  }, [padRefs]);
 
   const togglePanel = useCallback(
     (name) => {
@@ -499,11 +531,19 @@ export default function App() {
       <div className="board-area">
         <button
           type="button"
+          className="stop-pill"
+          disabled={!anyPlaying}
+          onClick={stopAllSounds}
+        >
+          <StopIcon />
+        </button>
+        <button
+          type="button"
           className={`erase-pill ${shiftHeld ? "on" : ""}`}
           disabled={!hasAnySounds}
           onClick={() => setShiftHeld((v) => !v)}
         >
-          {shiftHeld ? "done" : "\u2212"}
+          {shiftHeld ? "done" : <TrashIcon />}
         </button>
         <div className="board">
           {KEYS.map((key, i) => (
@@ -514,6 +554,7 @@ export default function App() {
               recordingLockRef={recordingLock}
               onErase={checkEraseOff}
               onChanged={onPadChanged}
+              onPlayingChange={onPadPlayingChange}
               ref={padRefs[i]}
             />
           ))}

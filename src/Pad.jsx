@@ -6,7 +6,7 @@ function randomHue() {
   return Math.floor(Math.random() * 360);
 }
 
-export const Pad = forwardRef(function Pad({ label, shiftHeld, recordingLockRef, onErase, onChanged }, ref) {
+export const Pad = forwardRef(function Pad({ label, shiftHeld, recordingLockRef, onErase, onChanged, onPlayingChange }, ref) {
   const [hue, setHue] = useState(null);
   const [playing, setPlaying] = useState(false);
   const [recording, setRecording] = useState(false);
@@ -27,6 +27,10 @@ export const Pad = forwardRef(function Pad({ label, shiftHeld, recordingLockRef,
   }, []);
 
   useEffect(() => () => destroyPadNode(autotuneRef.current), []);
+
+  useEffect(() => {
+    onPlayingChange?.(label, playing);
+  }, [playing, label, onPlayingChange]);
 
   const stopPlayback = useCallback(() => {
     if (playerRef.current) {
@@ -49,8 +53,10 @@ export const Pad = forwardRef(function Pad({ label, shiftHeld, recordingLockRef,
     const src = actx.createBufferSource();
     src.buffer = decodedRef.current;
     src.connect(node);
-    src.onended = () => setPlaying(false);
     playerRef.current = src;
+    src.onended = () => {
+      if (playerRef.current === src) setPlaying(false);
+    };
     setPlaying(true);
     src.start();
   }, [stopPlayback, ensureAutotuneNode]);
@@ -64,6 +70,9 @@ export const Pad = forwardRef(function Pad({ label, shiftHeld, recordingLockRef,
     const chunks = [];
     mr.ondataavailable = (e) => chunks.push(e.data);
     mr.onstop = async () => {
+      setRecording(false);
+      recordingRef.current = false;
+      if (recordingLockRef) recordingLockRef.current = false;
       if (chunks.length) {
         const raw = new Blob(chunks, { type: "audio/webm" });
         const trimmed = await trimSilence(raw);
@@ -75,22 +84,19 @@ export const Pad = forwardRef(function Pad({ label, shiftHeld, recordingLockRef,
         setHue(randomHue());
         onChanged?.();
       }
-      setRecording(false);
-      recordingRef.current = false;
-      if (recordingLockRef) recordingLockRef.current = false;
     };
     mediaRecRef.current = mr;
-    mr.start();
     setRecording(true);
     recordingRef.current = true;
     if (recordingLockRef) recordingLockRef.current = true;
+    mr.start();
   }, [stopPlayback, onChanged, recordingLockRef]);
 
   const stopRecording = useCallback(() => {
-    if (mediaRecRef.current?.state === "recording") {
-      mediaRecRef.current.stop();
-      mediaRecRef.current = null;
-    }
+    const mr = mediaRecRef.current;
+    if (!mr) return;
+    try { mr.stop(); } catch { /* not yet started */ }
+    mediaRecRef.current = null;
   }, []);
 
   const loadState = useCallback((state) => {
@@ -132,11 +138,10 @@ export const Pad = forwardRef(function Pad({ label, shiftHeld, recordingLockRef,
     trigger, release, stopPlayback, getState, loadState,
   }), [trigger, release, stopPlayback, getState, loadState]);
 
-  const onPointerDown = useCallback((e) => {
-    e.currentTarget.setPointerCapture(e.pointerId);
+  const onPointerDown = useCallback(() => {
     trigger(shiftHeld);
-  }, [trigger, shiftHeld]);
-  const onPointerUp = useCallback(() => release(), [release]);
+    document.addEventListener("pointerup", release, { once: true });
+  }, [trigger, shiftHeld, release]);
 
   let bg;
   if (recording) {
@@ -153,8 +158,6 @@ export const Pad = forwardRef(function Pad({ label, shiftHeld, recordingLockRef,
       className="pad"
       style={{ background: bg }}
       onPointerDown={onPointerDown}
-      onPointerUp={onPointerUp}
-      onLostPointerCapture={onPointerUp}
     >
       {shiftHeld && hasSound && <span className="pad-delete">-</span>}
       {recording ? "REC" : <span className="key-label">{label}</span>}
