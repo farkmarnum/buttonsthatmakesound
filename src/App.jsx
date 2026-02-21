@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect, useImperativeHandle, forwardRef } from "react";
 import { saveGrid, updateGrid, renameGrid, listGrids, loadGrid, deleteGrid, getActiveId, setActiveId } from "./db.js";
-import { getAudioContext, getInputNode, setCompressorMix, setReverbMix, setRetune, setScale, initAll, getMicStream, flushAutotune } from "./audio.js";
+import { getAudioContext, createPadNode, destroyPadNode, flushPadNode, setCompressorMix, setReverbMix, setRetune, setScale, initAll, getMicStream } from "./audio.js";
 import { startBeat, stopBeat, isPlaying, setBpm, setPattern, setBeatVolume } from "./beat.js";
 import "./App.css";
 
@@ -9,7 +9,7 @@ const SCALE_TYPES = ["chromatic","major","minor","pentatonic"];
 const BEAT_PATTERNS = ["basic","hiphop","halftime"];
 
 const KEYS = ["q","w","e","r","a","s","d","f","u","i","o","p","j","k","l",";"];
-const SILENCE_THRESHOLD = 0.04;
+const SILENCE_THRESHOLD = 0.075;
 
 function randomHue() {
   return Math.floor(Math.random() * 360);
@@ -21,10 +21,13 @@ async function trimSilence(blob) {
   const data = buf.getChannelData(0);
 
   let start = 0;
+  // trim silence from start:
   while (start < data.length && Math.abs(data[start]) < SILENCE_THRESHOLD)
     start++;
-  let end = data.length - 1;
-  while (end > start && Math.abs(data[end]) < SILENCE_THRESHOLD) end--;
+  const end = data.length - 1;
+
+  // this would trim silence from end:
+  // while (end > start && Math.abs(data[end]) < SILENCE_THRESHOLD) end--;
 
   if (start >= end) return blob;
 
@@ -92,6 +95,18 @@ const Pad = forwardRef(function Pad({ label, shiftHeld, onErase, onChanged }, re
   const recordingRef = useRef(false);
 
   const decodedRef = useRef(null); // cached AudioBuffer
+  const autotuneRef = useRef(null); // per-pad autotune worklet node
+
+  // Create this pad's autotune node lazily on first play
+  const ensureAutotuneNode = useCallback(async () => {
+    if (!autotuneRef.current) {
+      autotuneRef.current = await createPadNode();
+    }
+    return autotuneRef.current;
+  }, []);
+
+  // Cleanup on unmount
+  useEffect(() => () => destroyPadNode(autotuneRef.current), []);
 
   const stopPlayback = useCallback(() => {
     if (playerRef.current) {
@@ -99,7 +114,7 @@ const Pad = forwardRef(function Pad({ label, shiftHeld, onErase, onChanged }, re
       playerRef.current.disconnect();
       playerRef.current = null;
     }
-    flushAutotune();
+    flushPadNode(autotuneRef.current);
     setPlaying(false);
   }, []);
 
@@ -110,14 +125,15 @@ const Pad = forwardRef(function Pad({ label, shiftHeld, onErase, onChanged }, re
       decodedRef.current = await actx.decodeAudioData(await blobRef.current.arrayBuffer());
     }
     if (!decodedRef.current) return;
+    const node = await ensureAutotuneNode();
     const src = actx.createBufferSource();
     src.buffer = decodedRef.current;
-    src.connect(await getInputNode());
+    src.connect(node);
     src.onended = () => setPlaying(false);
     playerRef.current = src;
     setPlaying(true);
     src.start();
-  }, [stopPlayback]);
+  }, [stopPlayback, ensureAutotuneNode]);
 
   const startRecording = useCallback(() => {
     stopPlayback();
@@ -297,6 +313,13 @@ export default function App() {
   const [beatVol, setBeatVol] = useState(60);
   const [hasAnySounds, setHasAnySounds] = useState(false);
 
+  // FX state
+  const [compress, setCompress] = useState(30);
+  const [reverb, setReverb] = useState(50);
+  const [retune, setRetuneVal] = useState(50);
+  const [tonic, setTonic] = useState(0);
+  const [scaleType, setScaleType] = useState("chromatic");
+
   // Active grid tracking
   const [activeId, setActiveIdState] = useState(null);
   const [activeName, setActiveName] = useState("Grid 1");
@@ -304,6 +327,7 @@ export default function App() {
   const autoSaveTimer = useRef(null);
   const [renamingId, setRenamingId] = useState(null);
   const savedGridsRef = useRef([]);
+  const pendingLoad = useRef(null);
 
   const refreshList = useCallback(async () => {
     const grids = await listGrids();
@@ -357,6 +381,14 @@ export default function App() {
     }
   }, []);
 
+  // Apply pending grid once pads are mounted
+  useEffect(() => {
+    if (ready && pendingLoad.current) {
+      loadPadStates(pendingLoad.current);
+      pendingLoad.current = null;
+    }
+  }, [ready]);
+
   // Load last active grid on startup
   useEffect(() => {
     (async () => {
@@ -370,11 +402,8 @@ export default function App() {
           activeIdRef.current = id;
           setActiveIdState(id);
           setActiveName(grid.name);
-          // Defer loading until pads are mounted
-          setTimeout(() => {
-            loadPadStates(grid.pads);
-            setHasAnySounds(grid.pads.some((p) => p?.blob));
-          }, 0);
+          setHasAnySounds(grid.pads.some((p) => p?.blob));
+          pendingLoad.current = grid.pads;
           return;
         }
       }
@@ -563,36 +592,35 @@ export default function App() {
         <div className="controls">
           <label className="slider-label">
             compress
-            <input type="range" min="0" max="100" defaultValue="30"
-              onChange={(e) => setCompressorMix(e.target.value / 100)} />
+            <input type="range" min="0" max="100" value={compress}
+              onChange={(e) => { setCompress(Number(e.target.value)); setCompressorMix(e.target.value / 100); }} />
           </label>
           <label className="slider-label">
             reverb
-            <input type="range" min="0" max="100" defaultValue="50"
-              onChange={(e) => setReverbMix(e.target.value / 100)} />
+            <input type="range" min="0" max="100" value={reverb}
+              onChange={(e) => { setReverb(Number(e.target.value)); setReverbMix(e.target.value / 100); }} />
           </label>
           <label className="slider-label">
             retune
-            <input type="range" min="0" max="100" defaultValue="50"
-              onChange={(e) => setRetune(e.target.value / 100)} />
+            <input type="range" min="0" max="100" value={retune}
+              onChange={(e) => { setRetuneVal(Number(e.target.value)); setRetune(e.target.value / 100); }} />
           </label>
           <div className="scale-controls">
             <label className="select-label">
               key
-              <select defaultValue="0" onChange={(e) => {
-                const tonic = parseInt(e.target.value);
-                const scaleEl = e.target.closest(".scale-controls").querySelector("[data-role=scale]");
-                setScale(tonic, scaleEl.value);
+              <select value={tonic} onChange={(e) => {
+                const v = parseInt(e.target.value);
+                setTonic(v);
+                setScale(v, scaleType);
               }}>
                 {NOTE_NAMES.map((n, i) => <option key={n} value={i}>{n}</option>)}
               </select>
             </label>
             <label className="select-label">
               scale
-              <select defaultValue="chromatic" data-role="scale" onChange={(e) => {
-                const scale = e.target.value;
-                const tonicEl = e.target.closest(".scale-controls").querySelector("select:not([data-role])");
-                setScale(parseInt(tonicEl.value), scale);
+              <select value={scaleType} onChange={(e) => {
+                setScaleType(e.target.value);
+                setScale(tonic, e.target.value);
               }}>
                 {SCALE_TYPES.map((s) => <option key={s} value={s}>{s}</option>)}
               </select>

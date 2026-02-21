@@ -1,12 +1,18 @@
-// Shared audio graph:
-// source -> autotuneNode -> compressor -> makeupGain -> dryGain  -> limiter -> destination
-//                                                    -> reverbSend -> convolver -> wetGain -> limiter
-// beat -> beatGain -> limiter
+// Shared audio graph (per-pad autotune):
+// source -> [pad autotuneNode] -> compressor -> makeupGain -> dryGain  -> limiter -> destination
+//                                                           -> reverbSend -> convolver -> wetGain -> limiter
+// beat -> beatGain -> destination (separate)
 
-let ctx, autotuneNode, compressor, makeupGain, dryGain, wetGain, convolver, reverbSend, limiter;
-let inputNode; // the node sources should connect to
+let ctx, compressor, makeupGain, dryGain, wetGain, convolver, reverbSend, limiter;
+let compressorInput; // node that per-pad autotune nodes connect to
 let initPromise;
 let micStream = null;
+
+// Track all live per-pad autotune nodes for broadcasting retune/scale changes
+const padNodes = new Set();
+let currentRetune = 0.5;
+let currentTonic = 0;
+let currentScale = "chromatic";
 
 function generateIR(ctx, duration = 2, decay = 2) {
   const len = ctx.sampleRate * duration;
@@ -33,9 +39,6 @@ async function init() {
   ctx = new AudioContext();
 
   await ctx.audioWorklet.addModule("/autotune-processor.js");
-  autotuneNode = new AudioWorkletNode(ctx, "autotune-processor", {
-    parameterData: { retune: 0.5 },
-  });
 
   compressor = ctx.createDynamicsCompressor();
   compressor.knee.value = 12;
@@ -48,10 +51,10 @@ async function init() {
   makeupGain.gain.value = computeMakeup(0.3);
 
   dryGain = ctx.createGain();
-  dryGain.gain.value = 1 - 0.5 * 0.5;  // reverb default 50%
+  dryGain.gain.value = 1 - 0.5 * 0.5;
 
   wetGain = ctx.createGain();
-  wetGain.gain.value = 0.5;  // reverb default 50%
+  wetGain.gain.value = 0.5;
 
   reverbSend = ctx.createGain();
   reverbSend.gain.value = 1;
@@ -67,13 +70,12 @@ async function init() {
   limiter.attack.value = 0.001;
   limiter.release.value = 0.05;
 
-  autotuneNode.connect(compressor);
+  // Per-pad autotune nodes will connect to compressorInput
+  compressorInput = compressor;
   compressor.connect(makeupGain);
   makeupGain.connect(dryGain).connect(limiter);
   makeupGain.connect(reverbSend).connect(convolver).connect(wetGain).connect(limiter);
   limiter.connect(ctx.destination);
-
-  inputNode = autotuneNode;
 }
 
 function ensureCtx() {
@@ -86,14 +88,34 @@ export async function getAudioContext() {
   return ctx;
 }
 
-export async function getInputNode() {
-  await ensureCtx();
-  return inputNode;
-}
-
 export async function getMasterNode() {
   await ensureCtx();
   return limiter;
+}
+
+// Create a per-pad autotune node wired to the compressor input.
+// Caller is responsible for connecting their source to the returned node.
+export async function createPadNode() {
+  await ensureCtx();
+  const node = new AudioWorkletNode(ctx, "autotune-processor", {
+    parameterData: { retune: currentRetune },
+  });
+  node.port.postMessage({ type: "setScale", tonic: currentTonic, scale: currentScale });
+  node.connect(compressorInput);
+  padNodes.add(node);
+  return node;
+}
+
+// Remove a pad node from tracking and disconnect it
+export function destroyPadNode(node) {
+  if (!node) return;
+  padNodes.delete(node);
+  try { node.disconnect(); } catch { /* already disconnected */ }
+}
+
+// Flush a specific pad's autotune buffers
+export function flushPadNode(node) {
+  if (node) node.port.postMessage({ type: "flush" });
 }
 
 export async function setCompressorMix(amount) {
@@ -111,16 +133,19 @@ export async function setReverbMix(amount) {
 
 export async function setRetune(amount) {
   await ensureCtx();
-  autotuneNode.parameters.get("retune").value = amount;
+  currentRetune = amount;
+  for (const node of padNodes) {
+    node.parameters.get("retune").value = amount;
+  }
 }
 
 export async function setScale(tonic, scale) {
   await ensureCtx();
-  autotuneNode.port.postMessage({ type: "setScale", tonic, scale });
-}
-
-export function flushAutotune() {
-  if (autotuneNode) autotuneNode.port.postMessage({ type: "flush" });
+  currentTonic = tonic;
+  currentScale = scale;
+  for (const node of padNodes) {
+    node.port.postMessage({ type: "setScale", tonic, scale });
+  }
 }
 
 // Shared mic stream — acquired once, kept warm for instant recording
@@ -138,7 +163,7 @@ export async function checkMicPermission() {
   if (navigator.permissions?.query) {
     try {
       const status = await navigator.permissions.query({ name: "microphone" });
-      return status.state; // "granted" | "denied" | "prompt"
+      return status.state;
     } catch { /* some browsers don't support this query */ }
   }
   return "prompt";
