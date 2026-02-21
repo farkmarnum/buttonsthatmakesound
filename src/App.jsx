@@ -78,6 +78,7 @@ export default function App() {
   const [beatOn, setBeatOn] = useState(false);
   const [hasAnySounds, setHasAnySounds] = useState(false);
   const [renamingId, setRenamingId] = useState(null);
+  const [renamingTitle, setRenamingTitle] = useState(false);
   const pendingLoad = useRef(null);
   const autoSaveTimer = useRef(null);
 
@@ -289,18 +290,6 @@ export default function App() {
     refreshList();
   }, [flushAutoSave, padRefs, setShiftHeld, applyFx, savedGridsRef, getPadStates, setActiveGrid, refreshList]);
 
-  const handleSaveAs = useCallback(async () => {
-    const name = prompt("Name this grid:");
-    if (!name) return;
-    const pads = getPadStates();
-    const fx = { ...fxRef.current };
-    const newId = crypto.randomUUID();
-    await saveGrid(newId, name, pads, fx);
-    await setActiveGrid(newId);
-    setActiveName(name);
-    refreshList();
-  }, [getPadStates, setActiveGrid, refreshList]);
-
   const handleLoad = useCallback(async (id) => {
     await flushAutoSave();
     const grid = await loadGrid(id);
@@ -331,23 +320,44 @@ export default function App() {
     if (activeIdRef.current === id) setActiveName(newName.trim());
     refreshList();
     setRenamingId(null);
+    setRenamingTitle(false);
   }, [activeIdRef, refreshList]);
 
   if (!ready) return <StartModal onReady={() => setReady(true)} />;
 
   return (
     <div className="app">
-      <div className="grid-name">{activeName}</div>
+      <div className="grid-name">
+        {renamingTitle ? (
+          <form className="rename-form" onSubmit={(e) => {
+            e.preventDefault();
+            handleRename(activeIdRef.current, e.target.elements.name.value);
+          }}>
+            <input name="name" defaultValue={activeName} autoFocus
+              onBlur={(e) => handleRename(activeIdRef.current, e.target.value)} />
+          </form>
+        ) : (
+          <>
+            {activeName}
+            {activeId && <button type="button" className="rename-btn"
+              onClick={() => setRenamingTitle(true)}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+                strokeLinecap="round" strokeLinejoin="round" width="11" height="11">
+                <path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
+              </svg>
+            </button>}
+          </>
+        )}
+      </div>
       <div className="board">
         {KEYS.map((key, i) => (
           <Pad key={key} label={key} shiftHeld={shiftHeld} onErase={checkEraseOff}
             onChanged={onPadChanged} ref={padRefs[i]} />
         ))}
-        <button type="button" className="board-btn save-btn" onClick={handleSaveAs}>save as</button>
         <button type="button" className={`board-btn erase-btn ${shiftHeld ? "on" : ""}`}
           disabled={!hasAnySounds}
           onClick={() => setShiftHeld((v) => !v)}>
-          erase
+          {shiftHeld ? "done" : "erase"}
         </button>
         <button type="button" className="board-btn clear-btn" disabled={!hasAnySounds}
           onClick={handleNew}>new</button>
@@ -377,11 +387,18 @@ export default function App() {
                     onBlur={(e) => handleRename(g.id, e.target.value)} />
                 </form>
               ) : (
-                <button type="button" className="saved-name" onClick={() => handleLoad(g.id)}
-                  onDoubleClick={(e) => { e.preventDefault(); setRenamingId(g.id); }}>
-                  {g.id === activeId && <span className="active-dot" />}
-                  {g.name}
-                </button>
+                <>
+                  <button type="button" className="saved-name" onClick={() => handleLoad(g.id)}>
+                    {g.id === activeId && <span className="active-dot" />}
+                    {g.name}
+                  </button>
+                  <button type="button" className="rename-btn" onClick={() => setRenamingId(g.id)}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+                      strokeLinecap="round" strokeLinejoin="round" width="11" height="11">
+                      <path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
+                    </svg>
+                  </button>
+                </>
               )}
               <button type="button" className="saved-delete" onClick={() => handleDelete(g.id)}>
                 &times;

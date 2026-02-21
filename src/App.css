@@ -17,10 +17,33 @@
 }
 
 .grid-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 16px;
-  color: #555;
+  color: #888;
   letter-spacing: 0.04em;
   margin: 4px 0;
+}
+
+.grid-name .rename-form {
+  flex: 1;
+  max-width: 200px;
+}
+
+.rename-btn {
+  background: none;
+  border: none;
+  color: #888;
+  cursor: pointer;
+  padding: 2px 4px;
+  line-height: 1;
+  opacity: 0.5;
+  transition: opacity 0.15s;
+}
+
+.rename-btn:hover {
+  opacity: 1;
 }
 
 .board {
@@ -67,10 +90,10 @@
   position: absolute;
   top: 4px;
   right: 6px;
-  font-size: 16px;
+  font-size: 22px;
   font-weight: 800;
   line-height: 1;
-  color: rgba(0, 0, 0, 0.6);
+  color: #e55;
   pointer-events: none;
 }
 
@@ -92,21 +115,10 @@
   pointer-events: none;
 }
 
-.save-btn {
-  grid-column: 1 / 3;
-  background: #243024;
-  color: #6a6;
-}
-
-.save-btn:hover {
-  background: #2e3e2e;
-  color: #fff;
-}
-
 .erase-btn {
-  grid-column: 3;
+  grid-column: 1 / 3;
   background: #282828;
-  color: #777;
+  color: #999;
 }
 
 .erase-btn:hover {
@@ -120,9 +132,9 @@
 }
 
 .clear-btn {
-  grid-column: 4;
+  grid-column: 3 / 5;
   background: #282828;
-  color: #777;
+  color: #999;
 }
 
 .clear-btn:hover {
