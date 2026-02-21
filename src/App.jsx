@@ -414,6 +414,7 @@ export default function App() {
     await setActiveGrid(newId);
     setActiveName(name);
     refreshList();
+    setOpenPanel(null);
   }, [
     flushAutoSave,
     padRefs,
@@ -423,6 +424,7 @@ export default function App() {
     getPadStates,
     setActiveGrid,
     refreshList,
+    setOpenPanel,
   ]);
 
   const handleLoad = useCallback(
@@ -451,11 +453,23 @@ export default function App() {
     async (id) => {
       await flushAutoSave();
       await deleteGrid(id);
+      const remaining = savedGridsRef.current.filter((g) => g.id !== id);
       if (activeIdRef.current === id) {
-        padRefs.forEach((r) => r.current?.loadState(null));
-        await setActiveGrid(null);
-        const remaining = savedGridsRef.current.filter((g) => g.id !== id);
-        setActiveName(nextGridName(remaining));
+        if (remaining.length > 0) {
+          const first = remaining[0];
+          const grid = await loadGrid(first.id);
+          if (grid) {
+            loadPadStates(grid.pads);
+            applyFx(grid.fx);
+            await setActiveGrid(first.id);
+            setActiveName(grid.name);
+            recheckSounds();
+          }
+        } else {
+          padRefs.forEach((r) => r.current?.loadState(null));
+          await setActiveGrid(null);
+          setActiveName(nextGridName(remaining));
+        }
       }
       refreshList();
     },
@@ -466,6 +480,9 @@ export default function App() {
       savedGridsRef,
       setActiveGrid,
       refreshList,
+      loadPadStates,
+      applyFx,
+      recheckSounds,
     ]
   );
 
