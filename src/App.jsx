@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect, useImperativeHandle, forwardRef } from "react";
+import { saveGrid, listGrids, loadGrid, deleteGrid } from "./db.js";
 import "./App.css";
 
 const KEYS = ["q","w","e","r","a","s","d","f","u","i","o","p","j","k","l",";"];
@@ -72,7 +73,8 @@ const Pad = forwardRef(function Pad({ label }, ref) {
   const [hue, setHue] = useState(null);
   const [playing, setPlaying] = useState(false);
   const [recording, setRecording] = useState(false);
-  const audioRef = useRef(null);
+  const audioRef = useRef(null);   // blob URL
+  const blobRef = useRef(null);    // raw blob for serialization
   const mediaRecRef = useRef(null);
   const playerRef = useRef(null);
   const recordingRef = useRef(false);
@@ -109,6 +111,7 @@ const Pad = forwardRef(function Pad({ label }, ref) {
         const raw = new Blob(chunks, { type: "audio/webm" });
         const trimmed = await trimSilence(raw);
         if (audioRef.current) URL.revokeObjectURL(audioRef.current);
+        blobRef.current = trimmed;
         audioRef.current = URL.createObjectURL(trimmed);
         setHue(randomHue());
       }
@@ -132,6 +135,7 @@ const Pad = forwardRef(function Pad({ label }, ref) {
     stopPlayback();
     if (audioRef.current) URL.revokeObjectURL(audioRef.current);
     audioRef.current = null;
+    blobRef.current = null;
     setHue(null);
   }, [stopPlayback]);
 
@@ -148,7 +152,26 @@ const Pad = forwardRef(function Pad({ label }, ref) {
     if (recordingRef.current) stopRecording();
   }, [stopRecording]);
 
-  useImperativeHandle(ref, () => ({ trigger, release, reset }), [trigger, release, reset]);
+  const getState = useCallback(() => ({
+    hue,
+    blob: blobRef.current,
+  }), [hue]);
+
+  const loadState = useCallback((state) => {
+    stopPlayback();
+    if (audioRef.current) URL.revokeObjectURL(audioRef.current);
+    if (state?.blob) {
+      blobRef.current = state.blob;
+      audioRef.current = URL.createObjectURL(state.blob);
+      setHue(state.hue);
+    } else {
+      blobRef.current = null;
+      audioRef.current = null;
+      setHue(null);
+    }
+  }, [stopPlayback]);
+
+  useImperativeHandle(ref, () => ({ trigger, release, reset, getState, loadState }), [trigger, release, reset, getState, loadState]);
 
   const onPointerDown = useCallback((e) => trigger(e.shiftKey), [trigger]);
   const onPointerUp = useCallback(() => release(), [release]);
@@ -179,6 +202,13 @@ const Pad = forwardRef(function Pad({ label }, ref) {
 export default function App() {
   const padRefs = useRef(KEYS.map(() => ({ current: null })));
   const heldKeys = useRef(new Set());
+  const [savedGrids, setSavedGrids] = useState([]);
+
+  const refreshList = useCallback(async () => {
+    setSavedGrids(await listGrids());
+  }, []);
+
+  useEffect(() => { refreshList(); }, [refreshList]);
 
   useEffect(() => {
     const onKeyDown = (e) => {
@@ -209,14 +239,56 @@ export default function App() {
     padRefs.current.forEach((r) => r.current?.reset());
   }, []);
 
+  const handleSave = useCallback(async () => {
+    const name = prompt("Name this grid:");
+    if (!name) return;
+    const pads = padRefs.current.map((r) => r.current?.getState() ?? { hue: null, blob: null });
+    await saveGrid(crypto.randomUUID(), name, pads);
+    refreshList();
+  }, [refreshList]);
+
+  const handleLoad = useCallback(async (id) => {
+    const grid = await loadGrid(id);
+    if (!grid) return;
+    grid.pads.forEach((state, i) => {
+      padRefs.current[i].current?.loadState(state);
+    });
+  }, []);
+
+  const handleDelete = useCallback(async (id) => {
+    await deleteGrid(id);
+    refreshList();
+  }, [refreshList]);
+
   return (
-    <div className="board">
-      {KEYS.map((key, i) => (
-        <Pad key={key} label={key} ref={padRefs.current[i]} />
-      ))}
-      <button type="button" className="clear-all" onClick={clearAll}>
-        clear all
-      </button>
+    <div className="app">
+      <aside className="sidebar">
+        <h2>Saved</h2>
+        {savedGrids.length === 0 && <p className="empty">No saved grids</p>}
+        {savedGrids.map((g) => (
+          <div key={g.id} className="saved-item">
+            <button type="button" className="saved-name" onClick={() => handleLoad(g.id)}>
+              {g.name}
+            </button>
+            <button type="button" className="saved-delete" onClick={() => handleDelete(g.id)}>
+              &times;
+            </button>
+          </div>
+        ))}
+      </aside>
+      <main>
+        <div className="board">
+          {KEYS.map((key, i) => (
+            <Pad key={key} label={key} ref={padRefs.current[i]} />
+          ))}
+          <button type="button" className="board-btn save-btn" onClick={handleSave}>
+            save
+          </button>
+          <button type="button" className="board-btn clear-btn" onClick={clearAll}>
+            clear all
+          </button>
+        </div>
+      </main>
     </div>
   );
 }

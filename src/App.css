@@ -1,10 +1,80 @@
+.app {
+  display: flex;
+  width: 100%;
+  max-width: 700px;
+  margin: 0 auto;
+  gap: 16px;
+  padding: 24px;
+}
+
+.sidebar {
+  width: 160px;
+  flex-shrink: 0;
+}
+
+.sidebar h2 {
+  font-size: 14px;
+  color: #888;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.sidebar .empty {
+  font-size: 12px;
+  color: #555;
+}
+
+.saved-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.saved-name {
+  flex: 1;
+  text-align: left;
+  background: #2a2a2a;
+  border: none;
+  border-radius: 4px;
+  color: #ccc;
+  padding: 6px 8px;
+  font-size: 13px;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.saved-name:hover {
+  background: #383838;
+  color: #fff;
+}
+
+.saved-delete {
+  background: none;
+  border: none;
+  color: #666;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px 6px;
+  line-height: 1;
+}
+
+.saved-delete:hover {
+  color: #f55;
+}
+
+main {
+  flex: 1;
+}
+
 .board {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 8px;
-  padding: 24px;
   max-width: 480px;
-  margin: 0 auto;
 }
 
 .pad {
@@ -24,20 +94,34 @@
   transform: scale(0.95);
 }
 
-.clear-all {
-  grid-column: 3 / 5;
+.board-btn {
   margin-top: 8px;
   padding: 8px;
   border: none;
   border-radius: 8px;
-  background: #333;
-  color: #999;
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
 }
 
-.clear-all:hover {
+.save-btn {
+  grid-column: 1 / 3;
+  background: #2a4a2a;
+  color: #8c8;
+}
+
+.save-btn:hover {
+  background: #3a6a3a;
+  color: #fff;
+}
+
+.clear-btn {
+  grid-column: 3 / 5;
+  background: #333;
+  color: #999;
+}
+
+.clear-btn:hover {
   background: #444;
   color: #fff;
 }
