@@ -129,6 +129,7 @@ function Panel({ open, onClose, title, children }) {
 export default function App() {
   const [ready, setReady] = useState(false);
   const heldKeys = useRef(new Set());
+  const recordingLock = useRef(false);
 
   const padRefs = useMemo(() => KEYS.map(() => ({ current: null })), []);
 
@@ -510,6 +511,7 @@ export default function App() {
               key={key}
               label={key}
               shiftHeld={shiftHeld}
+              recordingLockRef={recordingLock}
               onErase={checkEraseOff}
               onChanged={onPadChanged}
               ref={padRefs[i]}

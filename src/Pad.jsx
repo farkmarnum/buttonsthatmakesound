@@ -6,7 +6,7 @@ function randomHue() {
   return Math.floor(Math.random() * 360);
 }
 
-export const Pad = forwardRef(function Pad({ label, shiftHeld, onErase, onChanged }, ref) {
+export const Pad = forwardRef(function Pad({ label, shiftHeld, recordingLockRef, onErase, onChanged }, ref) {
   const [hue, setHue] = useState(null);
   const [playing, setPlaying] = useState(false);
   const [recording, setRecording] = useState(false);
@@ -56,6 +56,7 @@ export const Pad = forwardRef(function Pad({ label, shiftHeld, onErase, onChange
   }, [stopPlayback, ensureAutotuneNode]);
 
   const startRecording = useCallback(() => {
+    if (recordingLockRef?.current) return;
     stopPlayback();
     let stream;
     try { stream = getMicStream(); } catch { return; }
@@ -76,12 +77,14 @@ export const Pad = forwardRef(function Pad({ label, shiftHeld, onErase, onChange
       }
       setRecording(false);
       recordingRef.current = false;
+      if (recordingLockRef) recordingLockRef.current = false;
     };
     mediaRecRef.current = mr;
     mr.start();
     setRecording(true);
     recordingRef.current = true;
-  }, [stopPlayback, onChanged]);
+    if (recordingLockRef) recordingLockRef.current = true;
+  }, [stopPlayback, onChanged, recordingLockRef]);
 
   const stopRecording = useCallback(() => {
     if (mediaRecRef.current?.state === "recording") {
