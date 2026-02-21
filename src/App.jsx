@@ -702,58 +702,58 @@ export default function App() {
               }}
             />
           </label>
-          <label className="slider-label">
-            retune
+          <label className="toggle-label">
             <input
-              type="range"
-              min="0"
-              max="100"
-              value={retune}
+              type="checkbox"
+              checked={retune > 0}
               onChange={(e) => {
-                const v = Number(e.target.value);
+                const v = e.target.checked ? 100 : 0;
                 setRetuneVal(v);
                 setRetune(v / 100);
                 saveFxChange("retune", v);
               }}
             />
+            autotune
           </label>
-          <div className="scale-controls">
-            <label className="select-label">
-              key
-              <select
-                value={tonic}
-                onChange={(e) => {
-                  const v = parseInt(e.target.value);
-                  setTonic(v);
-                  setScale(v, scaleType);
-                  saveFxChange("tonic", v);
-                }}
-              >
-                {NOTE_NAMES.map((n, i) => (
-                  <option key={n} value={i}>
-                    {n}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="select-label">
-              scale
-              <select
-                value={scaleType}
-                onChange={(e) => {
-                  setScaleType(e.target.value);
-                  setScale(tonic, e.target.value);
-                  saveFxChange("scaleType", e.target.value);
-                }}
-              >
-                {SCALE_TYPES.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
+          {retune > 0 && (
+            <div className="scale-controls">
+              <label className="select-label">
+                key
+                <select
+                  value={tonic}
+                  onChange={(e) => {
+                    const v = parseInt(e.target.value);
+                    setTonic(v);
+                    setScale(v, scaleType);
+                    saveFxChange("tonic", v);
+                  }}
+                >
+                  {NOTE_NAMES.map((n, i) => (
+                    <option key={n} value={i}>
+                      {n}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="select-label">
+                scale
+                <select
+                  value={scaleType}
+                  onChange={(e) => {
+                    setScaleType(e.target.value);
+                    setScale(tonic, e.target.value);
+                    saveFxChange("scaleType", e.target.value);
+                  }}
+                >
+                  {SCALE_TYPES.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          )}
         </div>
       </Panel>
 

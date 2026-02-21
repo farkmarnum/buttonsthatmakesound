@@ -356,7 +356,8 @@
 }
 
 .slider-label,
-.select-label {
+.select-label,
+.toggle-label {
   display: flex;
   flex-direction: column;
   font-size: 10px;
@@ -367,6 +368,17 @@
 
 .slider-label { gap: 6px; }
 .select-label { gap: 3px; flex: 1; }
+
+.toggle-label {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.toggle-label input[type="checkbox"] {
+  accent-color: var(--accent);
+}
 
 .slider-label input[type="range"] {
   width: 100%;
