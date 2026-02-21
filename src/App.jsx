@@ -1,23 +1,82 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
-import { saveGrid, updateGrid, renameGrid, listGrids, loadGrid, deleteGrid, getActiveId, setActiveId } from "./db.js";
-import { setCompressorMix, setReverbMix, setRetune, setScale, initAll } from "./audio.js";
-import { startBeat, stopBeat, isPlaying, setBpm, setPattern, setBeatVolume } from "./beat.js";
+import {
+  saveGrid,
+  updateGrid,
+  renameGrid,
+  listGrids,
+  loadGrid,
+  deleteGrid,
+  getActiveId,
+  setActiveId,
+} from "./db.js";
+import {
+  setCompressorMix,
+  setReverbMix,
+  setRetune,
+  setScale,
+  initAll,
+} from "./audio.js";
+import {
+  startBeat,
+  stopBeat,
+  isPlaying,
+  setBpm,
+  setPattern,
+  setBeatVolume,
+} from "./beat.js";
 import { Pad } from "./Pad.jsx";
 import useStateRef from "./useStateRef.js";
 import "./App.css";
 
-const NOTE_NAMES = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
-const SCALE_TYPES = ["chromatic","major","minor","pentatonic"];
-const BEAT_PATTERNS = ["basic","hiphop","halftime"];
-const KEYS = ["q","w","e","r","a","s","d","f","u","i","o","p","j","k","l",";"];
+const NOTE_NAMES = [
+  "C",
+  "C#",
+  "D",
+  "D#",
+  "E",
+  "F",
+  "F#",
+  "G",
+  "G#",
+  "A",
+  "A#",
+  "B",
+];
+const SCALE_TYPES = ["chromatic", "major", "minor", "pentatonic"];
+const BEAT_PATTERNS = ["basic", "hiphop", "halftime"];
+const KEYS = [
+  "q",
+  "w",
+  "e",
+  "r",
+  "a",
+  "s",
+  "d",
+  "f",
+  "u",
+  "i",
+  "o",
+  "p",
+  "j",
+  "k",
+  "l",
+  ";",
+];
 
 const DEFAULT_FX = {
-  compress: 30, reverb: 50, retune: 50,
-  tonic: 0, scaleType: "chromatic",
-  tempo: 100, beatVol: 60, beatPattern: "basic",
+  compress: 30,
+  reverb: 50,
+  retune: 50,
+  tonic: 0,
+  scaleType: "chromatic",
+  tempo: 100,
+  beatVol: 60,
+  beatPattern: "basic",
 };
 
 function nextGridName(grids) {
+  if (grids.length === 0) return "Grid";
+
   const used = new Set(grids.map((g) => g.name));
   let n = 1;
   while (used.has(`Grid ${n}`)) n++;
@@ -38,9 +97,13 @@ function StartModal({ onReady }) {
   return (
     <div className="modal-overlay">
       <div className="modal">
-        <h1>buttons that make sound</h1>
+        <h1>Buttons that make sound</h1>
+        <p>Hold the buttons to record.</p>
+        <p>Press the buttons to play.</p>
         {error && <p className="modal-error">{error}</p>}
-        <button type="button" className="modal-start" onClick={handleStart}>Start</button>
+        <button type="button" className="modal-start" onClick={handleStart}>
+          Start
+        </button>
       </div>
     </div>
   );
@@ -53,7 +116,9 @@ function Panel({ open, onClose, title, children }) {
       <div className="panel" onClick={(e) => e.stopPropagation()}>
         <div className="panel-header">
           <h2>{title}</h2>
-          <button type="button" className="panel-close" onClick={onClose}>&times;</button>
+          <button type="button" className="panel-close" onClick={onClose}>
+            &times;
+          </button>
         </div>
         {children}
       </div>
@@ -65,10 +130,8 @@ export default function App() {
   const [ready, setReady] = useState(false);
   const heldKeys = useRef(new Set());
 
-  // #10: padRefs inside component, stable across renders
   const padRefs = useMemo(() => KEYS.map(() => ({ current: null })), []);
 
-  // #7+8+9: consolidated state+ref pairs (eliminates dual-update fragility)
   const [shiftHeld, setShiftHeld, shiftRef] = useStateRef(false);
   const [savedGrids, setSavedGrids, savedGridsRef] = useStateRef([]);
   const [activeId, setActiveIdLocal, activeIdRef] = useStateRef(null);
@@ -90,27 +153,33 @@ export default function App() {
   const [scaleType, setScaleType] = useState(DEFAULT_FX.scaleType);
   const [tempo, setTempo] = useState(DEFAULT_FX.tempo);
   const [beatVol, setBeatVol] = useState(DEFAULT_FX.beatVol);
-  // #1: beatPattern is controlled state (fixes desync on panel reopen)
   const [beatPattern, setBeatPatternState] = useState(DEFAULT_FX.beatPattern);
 
-  // #17: fxRef mirrors current FX for reading in callbacks without stale closures
   const fxRef = useRef({ ...DEFAULT_FX });
 
-  // #7: consolidated activeId setter (state + ref + db in one call)
-  const setActiveGrid = useCallback(async (id) => {
-    setActiveIdLocal(id);
-    await setActiveId(id);
-  }, [setActiveIdLocal]);
+  const setActiveGrid = useCallback(
+    async (id) => {
+      setActiveIdLocal(id);
+      await setActiveId(id);
+    },
+    [setActiveIdLocal]
+  );
 
   const getPadStates = useCallback(() => {
-    return padRefs.map((r) => r.current?.getState() ?? { hue: null, blob: null });
+    return padRefs.map(
+      (r) => r.current?.getState() ?? { hue: null, blob: null }
+    );
   }, [padRefs]);
 
-  const loadPadStates = useCallback((pads) => {
-    pads.forEach((state, i) => { padRefs[i].current?.loadState(state); });
-  }, [padRefs]);
+  const loadPadStates = useCallback(
+    (pads) => {
+      pads.forEach((state, i) => {
+        padRefs[i].current?.loadState(state);
+      });
+    },
+    [padRefs]
+  );
 
-  // #17: apply FX settings to React state + audio engine + fxRef
   const applyFx = useCallback((fx) => {
     if (!fx) return;
     const c = fx.compress ?? DEFAULT_FX.compress;
@@ -121,12 +190,31 @@ export default function App() {
     const tp = fx.tempo ?? DEFAULT_FX.tempo;
     const bv = fx.beatVol ?? DEFAULT_FX.beatVol;
     const bp = fx.beatPattern ?? DEFAULT_FX.beatPattern;
-    setCompress(c); setReverb(r); setRetuneVal(rt);
-    setTonic(t); setScaleType(s);
-    setTempo(tp); setBeatVol(bv); setBeatPatternState(bp);
-    setCompressorMix(c / 100); setReverbMix(r / 100); setRetune(rt / 100);
-    setScale(t, s); setBpm(tp); setBeatVolume(bv / 100); setPattern(bp);
-    fxRef.current = { compress: c, reverb: r, retune: rt, tonic: t, scaleType: s, tempo: tp, beatVol: bv, beatPattern: bp };
+    setCompress(c);
+    setReverb(r);
+    setRetuneVal(rt);
+    setTonic(t);
+    setScaleType(s);
+    setTempo(tp);
+    setBeatVol(bv);
+    setBeatPatternState(bp);
+    setCompressorMix(c / 100);
+    setReverbMix(r / 100);
+    setRetune(rt / 100);
+    setScale(t, s);
+    setBpm(tp);
+    setBeatVolume(bv / 100);
+    setPattern(bp);
+    fxRef.current = {
+      compress: c,
+      reverb: r,
+      retune: rt,
+      tonic: t,
+      scaleType: s,
+      tempo: tp,
+      beatVol: bv,
+      beatPattern: bp,
+    };
   }, []);
 
   const refreshList = useCallback(async () => {
@@ -134,7 +222,6 @@ export default function App() {
     setSavedGrids(grids);
   }, [setSavedGrids]);
 
-  // #2: autoSave reads current state at fire time (safe because flushAutoSave
   // is called before any grid switch, preventing stale-grid saves)
   const autoSave = useCallback(() => {
     clearTimeout(autoSaveTimer.current);
@@ -155,7 +242,6 @@ export default function App() {
     }, 800);
   }, [getPadStates, activeIdRef, savedGridsRef, setActiveGrid, refreshList]);
 
-  // #2: flush pending auto-save immediately (called before grid switches)
   const flushAutoSave = useCallback(async () => {
     if (!autoSaveTimer.current) return;
     clearTimeout(autoSaveTimer.current);
@@ -166,14 +252,15 @@ export default function App() {
     }
   }, [getPadStates, activeIdRef]);
 
-  // #5: clean up auto-save timer on unmount
   useEffect(() => () => clearTimeout(autoSaveTimer.current), []);
 
-  // #17: helper to update a single FX ref field + trigger auto-save
-  const saveFxChange = useCallback((key, value) => {
-    fxRef.current = { ...fxRef.current, [key]: value };
-    if (activeIdRef.current) autoSave();
-  }, [autoSave, activeIdRef]);
+  const saveFxChange = useCallback(
+    (key, value) => {
+      fxRef.current = { ...fxRef.current, [key]: value };
+      if (activeIdRef.current) autoSave();
+    },
+    [autoSave, activeIdRef]
+  );
 
   const recheckSounds = useCallback(() => {
     setHasAnySounds(padRefs.some((r) => r.current?.getState()?.blob));
@@ -184,9 +271,12 @@ export default function App() {
     autoSave();
   }, [autoSave, recheckSounds]);
 
-  const togglePanel = useCallback((name) => {
-    setOpenPanel((cur) => cur === name ? null : name);
-  }, [setOpenPanel]);
+  const togglePanel = useCallback(
+    (name) => {
+      setOpenPanel((cur) => (cur === name ? null : name));
+    },
+    [setOpenPanel]
+  );
 
   const toggleBeat = useCallback(async () => {
     if (isPlaying()) {
@@ -228,9 +318,9 @@ export default function App() {
     })();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // #18: keyboard handler reads openPanel via ref — no listener churn on panel toggle
   useEffect(() => {
     const onKeyDown = (e) => {
+      if (e.target.tagName === "INPUT") return;
       if (e.repeat || e.metaKey || e.ctrlKey) return;
       if (e.key.toLowerCase() === "x") {
         e.preventDefault();
@@ -239,7 +329,10 @@ export default function App() {
       }
       if (e.key === "Escape") {
         e.preventDefault();
-        if (openPanelRef.current) { setOpenPanel(null); return; }
+        if (openPanelRef.current) {
+          setOpenPanel(null);
+          return;
+        }
         padRefs.forEach((r) => r.current?.release());
         padRefs.forEach((r) => r.current?.stopPlayback());
         return;
@@ -288,40 +381,72 @@ export default function App() {
     await setActiveGrid(newId);
     setActiveName(name);
     refreshList();
-  }, [flushAutoSave, padRefs, setShiftHeld, applyFx, savedGridsRef, getPadStates, setActiveGrid, refreshList]);
+  }, [
+    flushAutoSave,
+    padRefs,
+    setShiftHeld,
+    applyFx,
+    savedGridsRef,
+    getPadStates,
+    setActiveGrid,
+    refreshList,
+  ]);
 
-  const handleLoad = useCallback(async (id) => {
-    await flushAutoSave();
-    const grid = await loadGrid(id);
-    if (!grid) return;
-    loadPadStates(grid.pads);
-    applyFx(grid.fx);
-    await setActiveGrid(id);
-    setActiveName(grid.name);
-    setOpenPanel(null);
-    recheckSounds();
-  }, [flushAutoSave, loadPadStates, applyFx, setActiveGrid, setOpenPanel, recheckSounds]);
+  const handleLoad = useCallback(
+    async (id) => {
+      await flushAutoSave();
+      const grid = await loadGrid(id);
+      if (!grid) return;
+      loadPadStates(grid.pads);
+      applyFx(grid.fx);
+      await setActiveGrid(id);
+      setActiveName(grid.name);
+      setOpenPanel(null);
+      recheckSounds();
+    },
+    [
+      flushAutoSave,
+      loadPadStates,
+      applyFx,
+      setActiveGrid,
+      setOpenPanel,
+      recheckSounds,
+    ]
+  );
 
-  const handleDelete = useCallback(async (id) => {
-    await flushAutoSave();
-    await deleteGrid(id);
-    if (activeIdRef.current === id) {
-      padRefs.forEach((r) => r.current?.loadState(null));
-      await setActiveGrid(null);
-      const remaining = savedGridsRef.current.filter((g) => g.id !== id);
-      setActiveName(nextGridName(remaining));
-    }
-    refreshList();
-  }, [flushAutoSave, activeIdRef, padRefs, savedGridsRef, setActiveGrid, refreshList]);
+  const handleDelete = useCallback(
+    async (id) => {
+      await flushAutoSave();
+      await deleteGrid(id);
+      if (activeIdRef.current === id) {
+        padRefs.forEach((r) => r.current?.loadState(null));
+        await setActiveGrid(null);
+        const remaining = savedGridsRef.current.filter((g) => g.id !== id);
+        setActiveName(nextGridName(remaining));
+      }
+      refreshList();
+    },
+    [
+      flushAutoSave,
+      activeIdRef,
+      padRefs,
+      savedGridsRef,
+      setActiveGrid,
+      refreshList,
+    ]
+  );
 
-  const handleRename = useCallback(async (id, newName) => {
-    if (!newName.trim()) return;
-    await renameGrid(id, newName.trim());
-    if (activeIdRef.current === id) setActiveName(newName.trim());
-    refreshList();
-    setRenamingId(null);
-    setRenamingTitle(false);
-  }, [activeIdRef, refreshList]);
+  const handleRename = useCallback(
+    async (id, newName) => {
+      if (!newName.trim()) return;
+      await renameGrid(id, newName.trim());
+      if (activeIdRef.current === id) setActiveName(newName.trim());
+      refreshList();
+      setRenamingId(null);
+      setRenamingTitle(false);
+    },
+    [activeIdRef, refreshList]
+  );
 
   if (!ready) return <StartModal onReady={() => setReady(true)} />;
 
@@ -329,78 +454,168 @@ export default function App() {
     <div className="app">
       <div className="grid-name">
         {renamingTitle ? (
-          <form className="rename-form" onSubmit={(e) => {
-            e.preventDefault();
-            handleRename(activeIdRef.current, e.target.elements.name.value);
-          }}>
-            <input name="name" defaultValue={activeName} autoFocus
-              onBlur={(e) => handleRename(activeIdRef.current, e.target.value)} />
+          <form
+            className="rename-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleRename(activeIdRef.current, e.target.elements.name.value);
+            }}
+          >
+            <input
+              name="name"
+              defaultValue={activeName}
+              autoFocus
+              maxLength={40}
+              onBlur={(e) => handleRename(activeIdRef.current, e.target.value)}
+            />
           </form>
         ) : (
           <>
             {activeName}
-            {activeId && <button type="button" className="rename-btn"
-              onClick={() => setRenamingTitle(true)}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-                strokeLinecap="round" strokeLinejoin="round" width="11" height="11">
-                <path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
-              </svg>
-            </button>}
+            {activeId && (
+              <button
+                type="button"
+                className="rename-btn"
+                onClick={() => setRenamingTitle(true)}
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  width="11"
+                  height="11"
+                >
+                  <path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+                </svg>
+              </button>
+            )}
           </>
         )}
       </div>
-      <div className="board">
-        {KEYS.map((key, i) => (
-          <Pad key={key} label={key} shiftHeld={shiftHeld} onErase={checkEraseOff}
-            onChanged={onPadChanged} ref={padRefs[i]} />
-        ))}
-        <button type="button" className={`board-btn erase-btn ${shiftHeld ? "on" : ""}`}
+      <div className="board-area">
+        <button
+          type="button"
+          className={`erase-pill ${shiftHeld ? "on" : ""}`}
           disabled={!hasAnySounds}
-          onClick={() => setShiftHeld((v) => !v)}>
-          {shiftHeld ? "done" : "erase"}
+          onClick={() => setShiftHeld((v) => !v)}
+        >
+          {shiftHeld ? "done" : "\u2212"}
         </button>
-        <button type="button" className="board-btn clear-btn" disabled={!hasAnySounds}
-          onClick={handleNew}>new</button>
+        <div className="board">
+          {KEYS.map((key, i) => (
+            <Pad
+              key={key}
+              label={key}
+              shiftHeld={shiftHeld}
+              onErase={checkEraseOff}
+              onChanged={onPadChanged}
+              ref={padRefs[i]}
+            />
+          ))}
+        </div>
       </div>
       <div className="toolbar">
-        <button type="button" className={`toolbar-btn ${openPanel === "saved" ? "active" : ""}`}
-          onClick={() => togglePanel("saved")}>load</button>
-        <button type="button" className={`toolbar-btn ${openPanel === "fx" ? "active" : ""}`}
-          onClick={() => togglePanel("fx")}>fx</button>
-        <button type="button" className={`toolbar-btn ${beatOn ? "on" : ""}`}
-          onClick={toggleBeat}>{beatOn ? "stop" : "beat"}</button>
-        <button type="button" className={`toolbar-btn ${openPanel === "beat" ? "active" : ""}`}
-          onClick={() => togglePanel("beat")}>bpm</button>
+        <button
+          type="button"
+          className={`toolbar-btn ${openPanel === "saved" ? "active" : ""}`}
+          onClick={() => togglePanel("saved")}
+        >
+          grids
+        </button>
+        <button
+          type="button"
+          className={`toolbar-btn ${openPanel === "fx" ? "active" : ""}`}
+          onClick={() => togglePanel("fx")}
+        >
+          fx
+        </button>
+        <button
+          type="button"
+          className={`toolbar-btn ${beatOn ? "on" : ""}`}
+          onClick={toggleBeat}
+        >
+          {beatOn ? "stop" : "beat"}
+        </button>
+        <button
+          type="button"
+          className={`toolbar-btn ${openPanel === "beat" ? "active" : ""}`}
+          onClick={() => togglePanel("beat")}
+        >
+          bpm
+        </button>
       </div>
 
-      <Panel open={openPanel === "saved"} onClose={() => setOpenPanel(null)} title="Saved Grids">
+      <Panel
+        open={openPanel === "saved"}
+        onClose={() => setOpenPanel(null)}
+        title="Saved Grids"
+      >
+        <button type="button" className="new-grid-btn" onClick={handleNew}>
+          + new grid
+        </button>
         <div className="saved-list">
-          {savedGrids.length === 0 && <p className="empty">No saved grids yet</p>}
+          {savedGrids.length === 0 && (
+            <p className="empty">No saved grids yet</p>
+          )}
           {savedGrids.map((g) => (
-            <div key={g.id} className={`saved-item ${g.id === activeId ? "active" : ""}`}>
+            <div
+              key={g.id}
+              className={`saved-item ${g.id === activeId ? "active" : ""}`}
+            >
               {renamingId === g.id ? (
-                <form className="rename-form" onSubmit={(e) => {
-                  e.preventDefault();
-                  handleRename(g.id, e.target.elements.name.value);
-                }}>
-                  <input name="name" defaultValue={g.name} autoFocus
-                    onBlur={(e) => handleRename(g.id, e.target.value)} />
+                <form
+                  className="rename-form"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    handleRename(g.id, e.target.elements.name.value);
+                  }}
+                >
+                  <input
+                    name="name"
+                    defaultValue={g.name}
+                    autoFocus
+                    maxLength={40}
+                    onBlur={(e) => handleRename(g.id, e.target.value)}
+                  />
                 </form>
               ) : (
                 <>
-                  <button type="button" className="saved-name" onClick={() => handleLoad(g.id)}>
+                  <button
+                    type="button"
+                    className="saved-name"
+                    onClick={() => handleLoad(g.id)}
+                  >
                     {g.id === activeId && <span className="active-dot" />}
                     {g.name}
                   </button>
-                  <button type="button" className="rename-btn" onClick={() => setRenamingId(g.id)}>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-                      strokeLinecap="round" strokeLinejoin="round" width="11" height="11">
-                      <path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
+                  <button
+                    type="button"
+                    className="rename-btn"
+                    onClick={() => setRenamingId(g.id)}
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      width="11"
+                      height="11"
+                    >
+                      <path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
                     </svg>
                   </button>
                 </>
               )}
-              <button type="button" className="saved-delete" onClick={() => handleDelete(g.id)}>
+              <button
+                type="button"
+                className="saved-delete"
+                onClick={() => handleDelete(g.id)}
+              >
                 &times;
               </button>
             </div>
@@ -408,85 +623,148 @@ export default function App() {
         </div>
       </Panel>
 
-      <Panel open={openPanel === "fx"} onClose={() => setOpenPanel(null)} title="Effects">
+      <Panel
+        open={openPanel === "fx"}
+        onClose={() => setOpenPanel(null)}
+        title="Effects"
+      >
         <div className="controls">
           <label className="slider-label">
             compress
-            <input type="range" min="0" max="100" value={compress}
+            <input
+              type="range"
+              min="0"
+              max="100"
+              value={compress}
               onChange={(e) => {
                 const v = Number(e.target.value);
-                setCompress(v); setCompressorMix(v / 100);
+                setCompress(v);
+                setCompressorMix(v / 100);
                 saveFxChange("compress", v);
-              }} />
+              }}
+            />
           </label>
           <label className="slider-label">
             reverb
-            <input type="range" min="0" max="100" value={reverb}
+            <input
+              type="range"
+              min="0"
+              max="100"
+              value={reverb}
               onChange={(e) => {
                 const v = Number(e.target.value);
-                setReverb(v); setReverbMix(v / 100);
+                setReverb(v);
+                setReverbMix(v / 100);
                 saveFxChange("reverb", v);
-              }} />
+              }}
+            />
           </label>
           <label className="slider-label">
             retune
-            <input type="range" min="0" max="100" value={retune}
+            <input
+              type="range"
+              min="0"
+              max="100"
+              value={retune}
               onChange={(e) => {
                 const v = Number(e.target.value);
-                setRetuneVal(v); setRetune(v / 100);
+                setRetuneVal(v);
+                setRetune(v / 100);
                 saveFxChange("retune", v);
-              }} />
+              }}
+            />
           </label>
           <div className="scale-controls">
             <label className="select-label">
               key
-              <select value={tonic} onChange={(e) => {
-                const v = parseInt(e.target.value);
-                setTonic(v); setScale(v, scaleType);
-                saveFxChange("tonic", v);
-              }}>
-                {NOTE_NAMES.map((n, i) => <option key={n} value={i}>{n}</option>)}
+              <select
+                value={tonic}
+                onChange={(e) => {
+                  const v = parseInt(e.target.value);
+                  setTonic(v);
+                  setScale(v, scaleType);
+                  saveFxChange("tonic", v);
+                }}
+              >
+                {NOTE_NAMES.map((n, i) => (
+                  <option key={n} value={i}>
+                    {n}
+                  </option>
+                ))}
               </select>
             </label>
             <label className="select-label">
               scale
-              <select value={scaleType} onChange={(e) => {
-                setScaleType(e.target.value); setScale(tonic, e.target.value);
-                saveFxChange("scaleType", e.target.value);
-              }}>
-                {SCALE_TYPES.map((s) => <option key={s} value={s}>{s}</option>)}
+              <select
+                value={scaleType}
+                onChange={(e) => {
+                  setScaleType(e.target.value);
+                  setScale(tonic, e.target.value);
+                  saveFxChange("scaleType", e.target.value);
+                }}
+              >
+                {SCALE_TYPES.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
               </select>
             </label>
           </div>
         </div>
       </Panel>
 
-      <Panel open={openPanel === "beat"} onClose={() => setOpenPanel(null)} title="Beat Settings">
+      <Panel
+        open={openPanel === "beat"}
+        onClose={() => setOpenPanel(null)}
+        title="Beat Settings"
+      >
         <div className="controls">
           <label className="slider-label">
             {tempo} bpm
-            <input type="range" min="60" max="180" value={tempo} onChange={(e) => {
-              const v = Number(e.target.value);
-              setTempo(v); setBpm(v);
-              saveFxChange("tempo", v);
-            }} />
+            <input
+              type="range"
+              min="60"
+              max="180"
+              value={tempo}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                setTempo(v);
+                setBpm(v);
+                saveFxChange("tempo", v);
+              }}
+            />
           </label>
           <label className="slider-label">
             volume {beatVol}%
-            <input type="range" min="0" max="100" value={beatVol} onChange={(e) => {
-              const v = Number(e.target.value);
-              setBeatVol(v); setBeatVolume(v / 100);
-              saveFxChange("beatVol", v);
-            }} />
+            <input
+              type="range"
+              min="0"
+              max="100"
+              value={beatVol}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                setBeatVol(v);
+                setBeatVolume(v / 100);
+                saveFxChange("beatVol", v);
+              }}
+            />
           </label>
           <label className="select-label">
             pattern
-            <select value={beatPattern} onChange={(e) => {
-              setBeatPatternState(e.target.value);
-              setPattern(e.target.value);
-              saveFxChange("beatPattern", e.target.value);
-            }}>
-              {BEAT_PATTERNS.map((p) => <option key={p} value={p}>{p}</option>)}
+            <select
+              value={beatPattern}
+              onChange={(e) => {
+                setBeatPatternState(e.target.value);
+                setPattern(e.target.value);
+                saveFxChange("beatPattern", e.target.value);
+              }}
+            >
+              {BEAT_PATTERNS.map((p) => (
+                <option key={p} value={p}>
+                  {p}
+                </option>
+              ))}
             </select>
           </label>
         </div>
