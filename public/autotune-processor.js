@@ -1,7 +1,7 @@
 // Autotune AudioWorklet: YIN pitch detection + Bernsee phase-vocoder pitch shifting
 // Based on Stephan Bernsee's "Pitch Shifting Using The Fourier Transform"
 
-const FFT_SIZE = 2048;
+const FFT_SIZE = 512;
 const HALF = FFT_SIZE / 2;
 const OSAMP = 8;
 const HOP = FFT_SIZE / OSAMP;
@@ -19,7 +19,6 @@ const SCALES = {
 function buildNoteTable(tonic, scale) {
   const intervals = SCALES[scale] || SCALES.chromatic;
   const notes = [];
-  // generate all octaves C1(midi 24) through C7(midi 96)
   for (let oct = 0; oct < 8; oct++) {
     for (const iv of intervals) {
       const midi = tonic + iv + (oct * 12);
@@ -42,7 +41,6 @@ function nearestNote(freq, notes) {
 // ---- in-place radix-2 FFT (Cooley-Tukey) ----
 function fft(re, im, inv) {
   const n = re.length;
-  // bit-reversal
   for (let i = 1, j = 0; i < n; i++) {
     let bit = n >> 1;
     while (j & bit) { j ^= bit; bit >>= 1; }
@@ -72,112 +70,27 @@ function fft(re, im, inv) {
   if (inv) { for (let i = 0; i < n; i++) { re[i] /= n; im[i] /= n; } }
 }
 
-// ---- YIN pitch detection ----
-function detectPitch(buf, sr) {
-  const half = buf.length >> 1;
-  const d = new Float32Array(half);
-  for (let tau = 0; tau < half; tau++) {
-    let sum = 0;
-    for (let i = 0; i < half; i++) { const x = buf[i] - buf[i + tau]; sum += x * x; }
-    d[tau] = sum;
-  }
-  d[0] = 1;
-  let run = 0;
-  for (let tau = 1; tau < half; tau++) { run += d[tau]; d[tau] = d[tau] * tau / run; }
-  for (let tau = 2; tau < half; tau++) {
-    if (d[tau] < 0.2) {
-      while (tau + 1 < half && d[tau + 1] < d[tau]) tau++;
-      const s0 = d[tau - 1], s1 = d[tau], s2 = tau + 1 < half ? d[tau + 1] : s1;
-      const off = (s0 - s2) / (2 * (s0 - 2 * s1 + s2)) || 0;
-      return sr / (tau + off);
-    }
-  }
-  return 0;
-}
-
-// ---- Bernsee phase vocoder pitch shifting ----
-function pitchShift(shiftFactor, buf, sr, lastPhase, sumPhase) {
-  const re = new Float32Array(FFT_SIZE);
-  const im = new Float32Array(FFT_SIZE);
-  const mag = new Float32Array(HALF + 1);
-  const freq = new Float32Array(HALF + 1);
-  const sMag = new Float32Array(HALF + 1);
-  const sFreq = new Float32Array(HALF + 1);
-  const freqPerBin = sr / FFT_SIZE;
-
-  // window input
-  for (let i = 0; i < FFT_SIZE; i++) {
-    const w = -0.5 * Math.cos(TWO_PI * i / FFT_SIZE) + 0.5;
-    re[i] = buf[i] * w;
-    im[i] = 0;
-  }
-
-  fft(re, im, false);
-
-  // analysis
-  for (let k = 0; k <= HALF; k++) {
-    mag[k] = 2 * Math.sqrt(re[k] * re[k] + im[k] * im[k]);
-    const phase = Math.atan2(im[k], re[k]);
-    let dp = phase - lastPhase[k];
-    lastPhase[k] = phase;
-    dp -= k * EXPECT;
-    // map into +/- pi
-    let qpd = (dp / Math.PI) | 0;
-    if (qpd >= 0) qpd += qpd & 1; else qpd -= qpd & 1;
-    dp -= Math.PI * qpd;
-    dp = OSAMP * dp / TWO_PI;
-    freq[k] = k * freqPerBin + dp * freqPerBin;
-  }
-
-  // shift
-  for (let k = 0; k <= HALF; k++) {
-    const idx = Math.round(k * shiftFactor);
-    if (idx <= HALF) {
-      sMag[idx] += mag[k];
-      sFreq[idx] = freq[k] * shiftFactor;
-    }
-  }
-
-  // synthesis
-  for (let k = 0; k <= HALF; k++) {
-    let dp = sFreq[k];
-    dp -= k * freqPerBin;
-    dp /= freqPerBin;
-    dp = TWO_PI * dp / OSAMP;
-    dp += k * EXPECT;
-    sumPhase[k] += dp;
-    const ph = sumPhase[k];
-    re[k] = sMag[k] * Math.cos(ph);
-    im[k] = sMag[k] * Math.sin(ph);
-  }
-  // zero negative freqs
-  for (let k = HALF + 1; k < FFT_SIZE; k++) { re[k] = 0; im[k] = 0; }
-
-  fft(re, im, true);
-
-  // window output and normalize for overlap-add
-  // with Hann window and OSAMP oversampling, the OLA normalization is 2/3 * 1/OSAMP * 4
-  // empirically: scale = 2.0 / OSAMP gives unity gain
-  const scale = 2.0 / OSAMP;
-  const out = new Float32Array(FFT_SIZE);
-  for (let i = 0; i < FFT_SIZE; i++) {
-    const w = -0.5 * Math.cos(TWO_PI * i / FFT_SIZE) + 0.5;
-    out[i] = re[i] * w * scale;
-  }
-  return out;
-}
-
 class AutotuneProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
     this.fifoIn = new Float32Array(FFT_SIZE);
     this.fifoOut = new Float32Array(FFT_SIZE);
-    this.fifoPos = 0;
+    this.fifoPos = FFT_SIZE - HOP;
     this.lastPhase = new Float32Array(HALF + 1);
     this.sumPhase = new Float32Array(HALF + 1);
     this.currentShift = 1.0;
-    this.fifoPos = FFT_SIZE - HOP;
-    // default: C chromatic
+    this.freqPerBin = sampleRate / FFT_SIZE;
+
+    // Pre-allocated working buffers — no allocations in process() / GC pauses
+    this._re = new Float32Array(FFT_SIZE);
+    this._im = new Float32Array(FFT_SIZE);
+    this._mag = new Float32Array(HALF + 1);
+    this._freq = new Float32Array(HALF + 1);
+    this._sMag = new Float32Array(HALF + 1);
+    this._sFreq = new Float32Array(HALF + 1);
+    this._shifted = new Float32Array(FFT_SIZE);
+    this._yinBuf = new Float32Array(FFT_SIZE >> 1);
+
     this.notes = buildNoteTable(0, "chromatic");
     this.port.onmessage = (e) => {
       if (e.data.type === "setScale") {
@@ -197,6 +110,98 @@ class AutotuneProcessor extends AudioWorkletProcessor {
     return [{ name: "retune", defaultValue: 0, minValue: 0, maxValue: 1 }];
   }
 
+  _detectPitch(buf) {
+    const half = buf.length >> 1;
+    const d = this._yinBuf;
+    for (let tau = 0; tau < half; tau++) {
+      let sum = 0;
+      for (let i = 0; i < half; i++) { const x = buf[i] - buf[i + tau]; sum += x * x; }
+      d[tau] = sum;
+    }
+    d[0] = 1;
+    let run = 0;
+    for (let tau = 1; tau < half; tau++) { run += d[tau]; d[tau] = d[tau] * tau / run; }
+    for (let tau = 2; tau < half; tau++) {
+      if (d[tau] < 0.2) {
+        while (tau + 1 < half && d[tau + 1] < d[tau]) tau++;
+        const s0 = d[tau - 1], s1 = d[tau], s2 = tau + 1 < half ? d[tau + 1] : s1;
+        const off = (s0 - s2) / (2 * (s0 - 2 * s1 + s2)) || 0;
+        return sampleRate / (tau + off);
+      }
+    }
+    return 0;
+  }
+
+  _pitchShift(shiftFactor, buf) {
+    const re = this._re;
+    const im = this._im;
+    const mag = this._mag;
+    const freq = this._freq;
+    const sMag = this._sMag;
+    const sFreq = this._sFreq;
+    const out = this._shifted;
+    const fpb = this.freqPerBin;
+    const { lastPhase, sumPhase } = this;
+
+    // zero accumulators used with +=
+    sMag.fill(0);
+    sFreq.fill(0);
+
+    // window input
+    for (let i = 0; i < FFT_SIZE; i++) {
+      const w = -0.5 * Math.cos(TWO_PI * i / FFT_SIZE) + 0.5;
+      re[i] = buf[i] * w;
+      im[i] = 0;
+    }
+
+    fft(re, im, false);
+
+    // analysis
+    for (let k = 0; k <= HALF; k++) {
+      mag[k] = 2 * Math.sqrt(re[k] * re[k] + im[k] * im[k]);
+      const phase = Math.atan2(im[k], re[k]);
+      let dp = phase - lastPhase[k];
+      lastPhase[k] = phase;
+      dp -= k * EXPECT;
+      let qpd = (dp / Math.PI) | 0;
+      if (qpd >= 0) qpd += qpd & 1; else qpd -= qpd & 1;
+      dp -= Math.PI * qpd;
+      dp = OSAMP * dp / TWO_PI;
+      freq[k] = k * fpb + dp * fpb;
+    }
+
+    // shift
+    for (let k = 0; k <= HALF; k++) {
+      const idx = Math.round(k * shiftFactor);
+      if (idx <= HALF) {
+        sMag[idx] += mag[k];
+        sFreq[idx] = freq[k] * shiftFactor;
+      }
+    }
+
+    // synthesis
+    for (let k = 0; k <= HALF; k++) {
+      let dp = sFreq[k];
+      dp -= k * fpb;
+      dp /= fpb;
+      dp = TWO_PI * dp / OSAMP;
+      dp += k * EXPECT;
+      sumPhase[k] += dp;
+      const ph = sumPhase[k];
+      re[k] = sMag[k] * Math.cos(ph);
+      im[k] = sMag[k] * Math.sin(ph);
+    }
+    for (let k = HALF + 1; k < FFT_SIZE; k++) { re[k] = 0; im[k] = 0; }
+
+    fft(re, im, true);
+
+    const scale = 2.0 / OSAMP;
+    for (let i = 0; i < FFT_SIZE; i++) {
+      const w = -0.5 * Math.cos(TWO_PI * i / FFT_SIZE) + 0.5;
+      out[i] = re[i] * w * scale;
+    }
+  }
+
   process(inputs, outputs, parameters) {
     const input = inputs[0]?.[0];
     const output = outputs[0]?.[0];
@@ -208,10 +213,7 @@ class AutotuneProcessor extends AudioWorkletProcessor {
       return true;
     }
 
-    const sr = sampleRate;
-
     for (let s = 0; s < input.length; s++) {
-      // push sample into FIFO
       this.fifoIn[this.fifoPos] = input[s];
       output[s] = this.fifoOut[this.fifoPos - (FFT_SIZE - HOP)];
       this.fifoPos++;
@@ -219,22 +221,19 @@ class AutotuneProcessor extends AudioWorkletProcessor {
       if (this.fifoPos >= FFT_SIZE) {
         this.fifoPos = FFT_SIZE - HOP;
 
-        // detect pitch on the current frame
-        const freq = detectPitch(this.fifoIn, sr);
+        const freq = this._detectPitch(this.fifoIn);
         let targetShift = 1.0;
         if (freq > 60 && freq < 1200) {
           targetShift = nearestNote(freq, this.notes) / freq;
         }
 
-        // smooth toward target — retune controls speed
-        // 1 = instant snap, small values = gentle drift
         const speed = 0.05 + retune * 0.95;
         this.currentShift += (targetShift - this.currentShift) * speed;
 
-        // phase vocoder pitch shift
-        const shifted = pitchShift(this.currentShift, this.fifoIn, sr, this.lastPhase, this.sumPhase);
+        this._pitchShift(this.currentShift, this.fifoIn);
 
         // overlap-add into output FIFO
+        const shifted = this._shifted;
         for (let i = 0; i < FFT_SIZE; i++) {
           this.fifoOut[i] += shifted[i];
         }
@@ -247,7 +246,6 @@ class AutotuneProcessor extends AudioWorkletProcessor {
         for (let i = FFT_SIZE - HOP; i < FFT_SIZE; i++) {
           this.fifoOut[i] = 0;
         }
-
       }
     }
 
