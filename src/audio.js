@@ -62,13 +62,14 @@ async function init() {
   convolver = ctx.createConvolver();
   convolver.buffer = generateIR(ctx);
 
-  // Master limiter — brickwall at -1dB, fast attack, transparent release
+  // Master limiter — brickwall at -3dB
+  // Soft knee + slow release to avoid distortion when we're hitting the limits
   limiter = ctx.createDynamicsCompressor();
-  limiter.threshold.value = -1;
-  limiter.knee.value = 0;
+  limiter.threshold.value = -3;
+  limiter.knee.value = 6;
   limiter.ratio.value = 20;
   limiter.attack.value = 0.001;
-  limiter.release.value = 0.05;
+  limiter.release.value = 0.2;
 
   // Per-pad autotune nodes will connect to compressorInput
   compressorInput = compressor;
