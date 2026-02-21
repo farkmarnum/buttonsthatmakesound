@@ -97,3 +97,8 @@ export async function setRetune(amount) {
   await ensureCtx();
   autotuneNode.parameters.get("retune").value = amount;
 }
+
+export async function setScale(tonic, scale) {
+  await ensureCtx();
+  autotuneNode.port.postMessage({ type: "setScale", tonic, scale });
+}

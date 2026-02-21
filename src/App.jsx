@@ -1,6 +1,9 @@
 import { useState, useRef, useCallback, useEffect, useImperativeHandle, forwardRef } from "react";
 import { saveGrid, listGrids, loadGrid, deleteGrid } from "./db.js";
-import { getAudioContext, getInputNode, setCompressorMix, setReverbMix, setRetune } from "./audio.js";
+import { getAudioContext, getInputNode, setCompressorMix, setReverbMix, setRetune, setScale } from "./audio.js";
+
+const NOTE_NAMES = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
+const SCALE_TYPES = ["chromatic","major","minor","pentatonic"];
 import "./App.css";
 
 const KEYS = ["q","w","e","r","a","s","d","f","u","i","o","p","j","k","l",";"];
@@ -159,11 +162,11 @@ const Pad = forwardRef(function Pad({ label }, ref) {
 
   const trigger = useCallback(
     (shiftKey) => {
-      if (shiftKey) { reset(); return; }
+      if (shiftKey) { stopPlayback(); return; }
       if (hasSound) { play(); return; }
       startRecording();
     },
-    [hasSound, play, startRecording, reset],
+    [hasSound, play, startRecording, stopPlayback],
   );
 
   const release = useCallback(() => {
@@ -230,8 +233,23 @@ export default function App() {
   useEffect(() => { refreshList(); }, [refreshList]);
 
   useEffect(() => {
+    const onBeforeUnload = (e) => {
+      const hasWork = padRefs.current.some((r) => r.current?.getState()?.blob);
+      if (hasWork) e.preventDefault();
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, []);
+
+  useEffect(() => {
     const onKeyDown = (e) => {
-      if (e.repeat) return;
+      if (e.repeat || e.metaKey || e.ctrlKey) return;
+      if (e.key === " ") {
+        e.preventDefault();
+        padRefs.current.forEach((r) => r.current?.release());
+        padRefs.current.forEach((r) => r.current?.trigger(true));
+        return;
+      }
       const idx = KEYS.indexOf(e.key.toLowerCase());
       if (idx === -1) return;
       e.preventDefault();
@@ -310,6 +328,28 @@ export default function App() {
             <input type="range" min="0" max="100" defaultValue="0"
               onChange={(e) => setRetune(e.target.value / 100)} />
           </label>
+          <div className="scale-controls">
+            <label className="select-label">
+              key
+              <select defaultValue="0" onChange={(e) => {
+                const tonic = parseInt(e.target.value);
+                const scaleEl = e.target.closest(".scale-controls").querySelector("[data-role=scale]");
+                setScale(tonic, scaleEl.value);
+              }}>
+                {NOTE_NAMES.map((n, i) => <option key={n} value={i}>{n}</option>)}
+              </select>
+            </label>
+            <label className="select-label">
+              scale
+              <select defaultValue="chromatic" data-role="scale" onChange={(e) => {
+                const scale = e.target.value;
+                const tonicEl = e.target.closest(".scale-controls").querySelector("select:not([data-role])");
+                setScale(parseInt(tonicEl.value), scale);
+              }}>
+                {SCALE_TYPES.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </label>
+          </div>
         </div>
       </aside>
       <main>

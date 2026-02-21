@@ -8,13 +8,31 @@ const HOP = FFT_SIZE / OSAMP;
 const TWO_PI = 2 * Math.PI;
 const EXPECT = TWO_PI * HOP / FFT_SIZE;
 
-// chromatic note table (C1–C7)
-const CHROMATIC = [];
-for (let m = 24; m <= 96; m++) CHROMATIC.push(440 * Math.pow(2, (m - 69) / 12));
+// scale intervals (semitones from tonic)
+const SCALES = {
+  chromatic:  [0,1,2,3,4,5,6,7,8,9,10,11],
+  major:      [0,2,4,5,7,9,11],
+  minor:      [0,2,3,5,7,8,10],
+  pentatonic: [0,2,4,7,9],
+};
 
-function nearestNote(freq) {
-  let best = CHROMATIC[0], bestD = Infinity;
-  for (const n of CHROMATIC) {
+function buildNoteTable(tonic, scale) {
+  const intervals = SCALES[scale] || SCALES.chromatic;
+  const notes = [];
+  // generate all octaves C1(midi 24) through C7(midi 96)
+  for (let oct = 0; oct < 8; oct++) {
+    for (const iv of intervals) {
+      const midi = tonic + iv + (oct * 12);
+      if (midi < 24 || midi > 96) continue;
+      notes.push(440 * Math.pow(2, (midi - 69) / 12));
+    }
+  }
+  return notes;
+}
+
+function nearestNote(freq, notes) {
+  let best = notes[0], bestD = Infinity;
+  for (const n of notes) {
     const d = Math.abs(1200 * Math.log2(freq / n));
     if (d < bestD) { bestD = d; best = n; }
   }
@@ -158,8 +176,14 @@ class AutotuneProcessor extends AudioWorkletProcessor {
     this.lastPhase = new Float32Array(HALF + 1);
     this.sumPhase = new Float32Array(HALF + 1);
     this.currentShift = 1.0;
-    // fill latency
     this.fifoPos = FFT_SIZE - HOP;
+    // default: C chromatic
+    this.notes = buildNoteTable(0, "chromatic");
+    this.port.onmessage = (e) => {
+      if (e.data.type === "setScale") {
+        this.notes = buildNoteTable(e.data.tonic, e.data.scale);
+      }
+    };
   }
 
   static get parameterDescriptors() {
@@ -192,7 +216,7 @@ class AutotuneProcessor extends AudioWorkletProcessor {
         const freq = detectPitch(this.fifoIn, sr);
         let targetShift = 1.0;
         if (freq > 60 && freq < 1200) {
-          targetShift = nearestNote(freq) / freq;
+          targetShift = nearestNote(freq, this.notes) / freq;
         }
 
         // smooth toward target — retune controls speed
