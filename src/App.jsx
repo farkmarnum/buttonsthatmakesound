@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect, useImperativeHandle, forwardRef } from "react";
 import { saveGrid, listGrids, loadGrid, deleteGrid } from "./db.js";
-import { getAudioContext, getInputNode, setCompressorMix, setReverbMix, setRetune, setScale, checkMicPermission, initAll, getMicStream } from "./audio.js";
-import { startBeat, stopBeat, isPlaying, setBpm, setPattern } from "./beat.js";
+import { getAudioContext, getInputNode, setCompressorMix, setReverbMix, setRetune, setScale, initAll, getMicStream } from "./audio.js";
+import { startBeat, stopBeat, isPlaying, setBpm, setPattern, setBeatVolume } from "./beat.js";
 import "./App.css";
 
 const NOTE_NAMES = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
@@ -253,11 +253,18 @@ function StartModal({ onReady }) {
 
 function BeatControls({ beatOn, onToggleBeat }) {
   const [tempo, setTempo] = useState(100);
+  const [volume, setVolume] = useState(60);
 
   const handleTempo = useCallback((e) => {
     const v = Number(e.target.value);
     setTempo(v);
     setBpm(v);
+  }, []);
+
+  const handleVolume = useCallback((e) => {
+    const v = Number(e.target.value);
+    setVolume(v);
+    setBeatVolume(v / 100);
   }, []);
 
   const handlePattern = useCallback((e) => {
@@ -269,10 +276,16 @@ function BeatControls({ beatOn, onToggleBeat }) {
       <button type="button" className={`beat-toggle ${beatOn ? "on" : ""}`} onClick={onToggleBeat}>
         {beatOn ? "stop" : "beat"}
       </button>
-      <label className="slider-label beat-tempo">
-        {tempo} bpm
-        <input type="range" min="60" max="180" value={tempo} onChange={handleTempo} />
-      </label>
+      <div className="beat-sliders">
+        <label className="slider-label">
+          {tempo} bpm
+          <input type="range" min="60" max="180" value={tempo} onChange={handleTempo} />
+        </label>
+        <label className="slider-label">
+          vol {volume}%
+          <input type="range" min="0" max="100" value={volume} onChange={handleVolume} />
+        </label>
+      </div>
       <label className="select-label">
         pattern
         <select defaultValue="basic" onChange={handlePattern}>
@@ -293,15 +306,7 @@ export default function App() {
   const shiftRef = useRef(false);
   const [beatOn, setBeatOn] = useState(false);
 
-  // Auto-skip modal if mic permission already granted
-  useEffect(() => {
-    checkMicPermission().then(async (state) => {
-      if (state === "granted") {
-        await initAll();
-        setReady(true);
-      }
-    });
-  }, []);
+
 
   const toggleBeat = useCallback(async () => {
     if (isPlaying()) {

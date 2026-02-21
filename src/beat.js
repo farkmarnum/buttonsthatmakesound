@@ -1,7 +1,7 @@
 // Simple drum machine with synthesized sounds and lookahead scheduling.
 // Connects directly to ctx.destination (bypasses autotune/compressor chain).
 
-import { getAudioContext } from "./audio.js";
+import { getAudioContext, getMasterNode } from "./audio.js";
 
 let playing = false;
 let bpm = 100;
@@ -113,7 +113,7 @@ async function scheduler() {
   if (!beatGain) {
     beatGain = ctx.createGain();
     beatGain.gain.value = 0.6;
-    beatGain.connect(ctx.destination);
+    beatGain.connect(await getMasterNode());
   }
   while (nextStepTime < ctx.currentTime + LOOKAHEAD) {
     scheduleStep(ctx, beatGain, currentStep, nextStepTime);
@@ -143,3 +143,5 @@ export function isPlaying() { return playing; }
 export function setBpm(v) { bpm = v; }
 
 export function setPattern(p) { pattern = p; }
+
+export function setBeatVolume(v) { if (beatGain) beatGain.gain.value = v; }

@@ -260,7 +260,13 @@ main {
   color: #e77;
 }
 
-.beat-tempo {
+.beat-sliders {
+  flex: 1;
+  display: flex;
+  gap: 10px;
+}
+
+.beat-sliders .slider-label {
   flex: 1;
 }
 

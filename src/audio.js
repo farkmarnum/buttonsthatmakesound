@@ -1,8 +1,9 @@
 // Shared audio graph:
-// source -> autotuneNode -> compressor -> makeupGain -> dryGain -> destination
-//                                                    -> reverbSend -> convolver -> wetGain -> destination
+// source -> autotuneNode -> compressor -> makeupGain -> dryGain  -> limiter -> destination
+//                                                    -> reverbSend -> convolver -> wetGain -> limiter
+// beat -> beatGain -> limiter
 
-let ctx, autotuneNode, compressor, makeupGain, dryGain, wetGain, convolver, reverbSend;
+let ctx, autotuneNode, compressor, makeupGain, dryGain, wetGain, convolver, reverbSend, limiter;
 let inputNode; // the node sources should connect to
 let initPromise;
 let micStream = null;
@@ -58,10 +59,19 @@ async function init() {
   convolver = ctx.createConvolver();
   convolver.buffer = generateIR(ctx);
 
+  // Master limiter — brickwall at -1dB, fast attack, transparent release
+  limiter = ctx.createDynamicsCompressor();
+  limiter.threshold.value = -1;
+  limiter.knee.value = 0;
+  limiter.ratio.value = 20;
+  limiter.attack.value = 0.001;
+  limiter.release.value = 0.05;
+
   autotuneNode.connect(compressor);
   compressor.connect(makeupGain);
-  makeupGain.connect(dryGain).connect(ctx.destination);
-  makeupGain.connect(reverbSend).connect(convolver).connect(wetGain).connect(ctx.destination);
+  makeupGain.connect(dryGain).connect(limiter);
+  makeupGain.connect(reverbSend).connect(convolver).connect(wetGain).connect(limiter);
+  limiter.connect(ctx.destination);
 
   inputNode = autotuneNode;
 }
@@ -79,6 +89,11 @@ export async function getAudioContext() {
 export async function getInputNode() {
   await ensureCtx();
   return inputNode;
+}
+
+export async function getMasterNode() {
+  await ensureCtx();
+  return limiter;
 }
 
 export async function setCompressorMix(amount) {
