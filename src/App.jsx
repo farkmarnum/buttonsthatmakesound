@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect, useImperativeHandle, forwardRef } from "react";
 import { saveGrid, listGrids, loadGrid, deleteGrid } from "./db.js";
-import { getAudioContext, getInputNode, setCompressorMix, setReverbMix, setRetune, setScale } from "./audio.js";
+import { getAudioContext, getInputNode, setCompressorMix, setReverbMix, setRetune, setScale, checkMicPermission, initAll, getMicStream } from "./audio.js";
 import { startBeat, stopBeat, isPlaying, setBpm, setPattern } from "./beat.js";
 import "./App.css";
 
@@ -118,14 +118,14 @@ const Pad = forwardRef(function Pad({ label, shiftHeld, onErase }, ref) {
     src.start();
   }, [stopPlayback]);
 
-  const startRecording = useCallback(async () => {
+  const startRecording = useCallback(() => {
     stopPlayback();
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const stream = getMicStream();
+    if (!stream) return;
     const mr = new MediaRecorder(stream);
     const chunks = [];
     mr.ondataavailable = (e) => chunks.push(e.data);
     mr.onstop = async () => {
-      stream.getTracks().forEach((t) => t.stop());
       if (chunks.length) {
         const raw = new Blob(chunks, { type: "audio/webm" });
         const trimmed = await trimSilence(raw);
@@ -226,6 +226,31 @@ const Pad = forwardRef(function Pad({ label, shiftHeld, onErase }, ref) {
   );
 });
 
+function StartModal({ onReady }) {
+  const [error, setError] = useState(null);
+
+  const handleStart = useCallback(async () => {
+    try {
+      await initAll();
+      onReady();
+    } catch {
+      setError("Microphone access is required to record sounds.");
+    }
+  }, [onReady]);
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal">
+        <h1>buttons that make sound</h1>
+        {error && <p className="modal-error">{error}</p>}
+        <button type="button" className="modal-start" onClick={handleStart}>
+          Start
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function BeatControls({ beatOn, onToggleBeat }) {
   const [tempo, setTempo] = useState(100);
 
@@ -261,11 +286,22 @@ function BeatControls({ beatOn, onToggleBeat }) {
 const padRefs = KEYS.map(() => ({ current: null }));
 
 export default function App() {
+  const [ready, setReady] = useState(false);
   const heldKeys = useRef(new Set());
   const [savedGrids, setSavedGrids] = useState([]);
   const [shiftHeld, setShiftHeld] = useState(false);
   const shiftRef = useRef(false);
   const [beatOn, setBeatOn] = useState(false);
+
+  // Auto-skip modal if mic permission already granted
+  useEffect(() => {
+    checkMicPermission().then(async (state) => {
+      if (state === "granted") {
+        await initAll();
+        setReady(true);
+      }
+    });
+  }, []);
 
   const toggleBeat = useCallback(async () => {
     if (isPlaying()) {
@@ -368,6 +404,8 @@ export default function App() {
     await deleteGrid(id);
     refreshList();
   }, [refreshList]);
+
+  if (!ready) return <StartModal onReady={() => setReady(true)} />;
 
   return (
     <div className="app">

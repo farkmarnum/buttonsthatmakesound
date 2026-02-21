@@ -5,6 +5,7 @@
 let ctx, autotuneNode, compressor, makeupGain, dryGain, wetGain, convolver, reverbSend;
 let inputNode; // the node sources should connect to
 let initPromise;
+let micStream = null;
 
 function generateIR(ctx, duration = 2, decay = 2) {
   const len = ctx.sampleRate * duration;
@@ -101,4 +102,31 @@ export async function setRetune(amount) {
 export async function setScale(tonic, scale) {
   await ensureCtx();
   autotuneNode.port.postMessage({ type: "setScale", tonic, scale });
+}
+
+// Shared mic stream — acquired once, kept warm for instant recording
+export async function acquireMic() {
+  if (micStream) return micStream;
+  micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  return micStream;
+}
+
+export function getMicStream() {
+  return micStream;
+}
+
+export async function checkMicPermission() {
+  if (navigator.permissions?.query) {
+    try {
+      const status = await navigator.permissions.query({ name: "microphone" });
+      return status.state; // "granted" | "denied" | "prompt"
+    } catch { /* some browsers don't support this query */ }
+  }
+  return "prompt";
+}
+
+// Call this from the start modal — initializes audio context + mic in one gesture
+export async function initAll() {
+  await ensureCtx();
+  await acquireMic();
 }

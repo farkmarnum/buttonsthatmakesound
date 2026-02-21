@@ -268,3 +268,56 @@ main {
   flex: 0 0 auto;
   min-width: 90px;
 }
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.modal {
+  background: #222;
+  border-radius: 16px;
+  padding: 40px 48px;
+  text-align: center;
+  max-width: 360px;
+}
+
+.modal h1 {
+  font-size: 22px;
+  color: #eee;
+  margin-bottom: 8px;
+}
+
+.modal p {
+  font-size: 14px;
+  color: #888;
+  line-height: 1.5;
+  margin-bottom: 4px;
+}
+
+.modal-error {
+  color: #e77 !important;
+  font-size: 13px !important;
+}
+
+.modal-start {
+  margin-top: 20px;
+  padding: 12px 40px;
+  border: none;
+  border-radius: 10px;
+  background: #fff;
+  color: #111;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.modal-start:hover {
+  opacity: 0.85;
+}
