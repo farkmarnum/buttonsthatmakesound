@@ -80,7 +80,7 @@ async function trimSilence(blob) {
   return new Blob([buffer], { type: "audio/wav" });
 }
 
-const Pad = forwardRef(function Pad({ label, shiftHeld }, ref) {
+const Pad = forwardRef(function Pad({ label, shiftHeld, onErase }, ref) {
   const [hue, setHue] = useState(null);
   const [playing, setPlaying] = useState(false);
   const [recording, setRecording] = useState(false);
@@ -164,11 +164,11 @@ const Pad = forwardRef(function Pad({ label, shiftHeld }, ref) {
 
   const trigger = useCallback(
     (shiftKey) => {
-      if (shiftKey) { reset(); return; }
+      if (shiftKey) { reset(); onErase?.(); return; }
       if (hasSound) { play(); return; }
       startRecording();
     },
-    [hasSound, play, startRecording, reset],
+    [hasSound, play, startRecording, reset, onErase],
   );
 
   const release = useCallback(() => {
@@ -334,8 +334,18 @@ export default function App() {
     };
   }, [toggleBeat]);
 
+  const checkEraseOff = useCallback(() => {
+    const anyHaveSound = padRefs.some((r) => r.current?.getState()?.blob);
+    if (!anyHaveSound) {
+      shiftRef.current = false;
+      setShiftHeld(false);
+    }
+  }, []);
+
   const clearAll = useCallback(() => {
     padRefs.forEach((r) => r.current?.reset());
+    shiftRef.current = false;
+    setShiftHeld(false);
   }, []);
 
   const handleSave = useCallback(async () => {
@@ -421,7 +431,7 @@ export default function App() {
       <main>
         <div className="board">
           {KEYS.map((key, i) => (
-            <Pad key={key} label={key} shiftHeld={shiftHeld} ref={padRefs[i]} />
+            <Pad key={key} label={key} shiftHeld={shiftHeld} onErase={checkEraseOff} ref={padRefs[i]} />
           ))}
           <button type="button" className="board-btn save-btn" onClick={handleSave}>
             save
