@@ -1,3 +1,17 @@
+.app {
+  --bg-btn: #282828;
+  --bg-btn-hover: #333;
+  --bg-surface: #222;
+  --bg-input: #1a1a1a;
+  --text-muted: #666;
+  --text-default: #999;
+  --text-hover: #fff;
+  --accent: #88f;
+  --accent-text: #aaf;
+  --danger: #e77;
+  --danger-bg: #3a2020;
+}
+
 .app * {
   user-select: none;
 }
@@ -59,48 +73,14 @@
   max-width: 480px;
 }
 
-.erase-pill {
+.board-pill {
   position: absolute;
   top: -40px;
-  right: 0;
   padding: 6px 16px;
   border: none;
   border-radius: 10px;
-  background: #282828;
-  color: #999;
-  font-size: 11px;
-  font-weight: 600;
-  cursor: pointer;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  line-height: 1.4;
-  transition: background 0.15s, color 0.15s;
-}
-
-.erase-pill:hover {
-  background: #333;
-  color: #fff;
-}
-
-.erase-pill.on {
-  background: #3a2020;
-  color: #e77;
-}
-
-.erase-pill:disabled {
-  opacity: 0.3;
-  cursor: default;
-}
-
-.stop-pill {
-  position: absolute;
-  top: -40px;
-  left: 0;
-  padding: 6px 16px;
-  border: none;
-  border-radius: 10px;
-  background: #282828;
-  color: #999;
+  background: var(--bg-btn);
+  color: var(--text-default);
   font-size: 11px;
   font-weight: 600;
   cursor: pointer;
@@ -110,15 +90,20 @@
   transition: background 0.15s, color 0.15s, opacity 0.15s;
 }
 
-.stop-pill:hover {
-  background: #333;
-  color: #fff;
+.board-pill:hover {
+  background: var(--bg-btn-hover);
+  color: var(--text-hover);
 }
 
-.stop-pill:disabled {
+.board-pill:disabled {
   opacity: 0.3;
   cursor: default;
 }
+
+.erase-pill { right: 0; }
+.stop-pill { left: 0; }
+
+
 
 .board {
   display: grid;
@@ -181,8 +166,8 @@
   padding: 10px;
   border: none;
   border-radius: 8px;
-  background: #232323;
-  color: #666;
+  background: var(--bg-btn);
+  color: var(--text-muted);
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
@@ -192,18 +177,18 @@
 }
 
 .toolbar-btn:hover {
-  background: #2e2e2e;
-  color: #ccc;
+  background: var(--bg-btn-hover);
+  color: var(--text-hover);
 }
 
 .toolbar-btn.active {
-  background: #2a2a3a;
-  color: #aaf;
+  color: var(--accent-text);
 }
 
-.toolbar-btn.on {
-  background: #3a2020;
-  color: #e77;
+.toolbar-btn.on,
+.board-pill.on {
+  background: var(--danger-bg);
+  color: var(--danger);
 }
 
 /* Panels */
@@ -219,7 +204,7 @@
 }
 
 .panel {
-  background: #222;
+  background: var(--bg-surface);
   border-radius: 14px;
   padding: 20px 24px;
   width: 320px;
@@ -298,10 +283,10 @@
 .saved-name {
   flex: 1;
   text-align: left;
-  background: #2a2a2a;
+  background: var(--bg-btn);
   border: none;
   border-radius: 4px;
-  color: #aaa;
+  color: var(--text-default);
   padding: 8px 10px;
   font-size: 13px;
   cursor: pointer;
@@ -311,8 +296,8 @@
 }
 
 .saved-name:hover {
-  background: #333;
-  color: #fff;
+  background: var(--bg-btn-hover);
+  color: var(--text-hover);
 }
 
 .saved-delete {
@@ -330,8 +315,7 @@
 }
 
 .saved-item.active .saved-name {
-  background: #2a2a3a;
-  color: #ccf;
+  color: var(--accent-text);
 }
 
 .active-dot {
@@ -339,7 +323,7 @@
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #88f;
+  background: var(--accent);
   margin-right: 6px;
   vertical-align: middle;
 }
@@ -350,17 +334,17 @@
 
 .rename-form input {
   width: 100%;
-  background: #1a1a1a;
+  background: var(--bg-input);
   border: 1px solid #555;
   border-radius: 4px;
-  color: #fff;
+  color: var(--text-hover);
   padding: 7px 9px;
   font-size: 13px;
   outline: none;
 }
 
 .rename-form input:focus {
-  border-color: #88f;
+  border-color: var(--accent);
 }
 
 /* Controls (shared by fx and beat panels) */
@@ -371,19 +355,22 @@
   gap: 12px;
 }
 
-.slider-label {
+.slider-label,
+.select-label {
   display: flex;
   flex-direction: column;
-  gap: 6px;
   font-size: 10px;
-  color: #666;
+  color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
 
+.slider-label { gap: 6px; }
+.select-label { gap: 3px; flex: 1; }
+
 .slider-label input[type="range"] {
   width: 100%;
-  accent-color: #666;
+  accent-color: var(--text-muted);
 }
 
 .scale-controls {
@@ -391,35 +378,24 @@
   gap: 8px;
 }
 
-.select-label {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  font-size: 10px;
-  color: #666;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  flex: 1;
-}
-
 .select-label select {
-  background: #2a2a2a;
-  border: 1px solid #333;
+  background: var(--bg-btn);
+  border: 1px solid var(--bg-btn-hover);
   border-radius: 4px;
-  color: #aaa;
+  color: var(--text-default);
   padding: 6px;
   font-size: 12px;
   cursor: pointer;
 }
 
 .select-label select:hover {
-  border-color: #666;
+  border-color: var(--text-muted);
 }
 
 /* Start modal */
 
 .modal {
-  background: #222;
+  background: var(--bg-surface);
   border-radius: 16px;
   padding: 40px 48px;
   text-align: center;
@@ -440,7 +416,7 @@
 }
 
 .modal-error {
-  color: #e77 !important;
+  color: var(--danger) !important;
   font-size: 13px !important;
 }
 

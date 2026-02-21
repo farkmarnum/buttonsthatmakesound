@@ -531,7 +531,7 @@ export default function App() {
       <div className="board-area">
         <button
           type="button"
-          className="stop-pill"
+          className="board-pill stop-pill"
           disabled={!anyPlaying}
           onClick={stopAllSounds}
         >
@@ -539,7 +539,7 @@ export default function App() {
         </button>
         <button
           type="button"
-          className={`erase-pill ${shiftHeld ? "on" : ""}`}
+          className={`board-pill erase-pill ${shiftHeld ? "on" : ""}`}
           disabled={!hasAnySounds}
           onClick={() => setShiftHeld((v) => !v)}
         >
