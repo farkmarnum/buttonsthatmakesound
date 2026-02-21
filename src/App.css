@@ -80,6 +80,7 @@ main {
 }
 
 .pad {
+  position: relative;
   aspect-ratio: 1;
   border: none;
   border-radius: 8px;
@@ -94,6 +95,17 @@ main {
 
 .pad:active {
   transform: scale(0.95);
+}
+
+.pad-delete {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1;
+  color: rgba(0, 0, 0, 0.6);
+  pointer-events: none;
 }
 
 .board-btn {
@@ -179,4 +191,43 @@ main {
 
 .select-label select:hover {
   border-color: #666;
+}
+
+.beat-controls {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  margin-top: 16px;
+  max-width: 480px;
+}
+
+.beat-toggle {
+  padding: 6px 14px;
+  border: none;
+  border-radius: 6px;
+  background: #2a2a2a;
+  color: #999;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.beat-toggle:hover {
+  background: #383838;
+  color: #fff;
+}
+
+.beat-toggle.on {
+  background: #4a2a2a;
+  color: #f88;
+}
+
+.beat-tempo {
+  flex: 1;
+}
+
+.beat-controls .select-label {
+  flex: 0 0 auto;
+  min-width: 90px;
 }

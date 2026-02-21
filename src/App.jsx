@@ -1,10 +1,12 @@
 import { useState, useRef, useCallback, useEffect, useImperativeHandle, forwardRef } from "react";
 import { saveGrid, listGrids, loadGrid, deleteGrid } from "./db.js";
 import { getAudioContext, getInputNode, setCompressorMix, setReverbMix, setRetune, setScale } from "./audio.js";
+import { startBeat, stopBeat, isPlaying, setBpm, setPattern } from "./beat.js";
+import "./App.css";
 
 const NOTE_NAMES = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
 const SCALE_TYPES = ["chromatic","major","minor","pentatonic"];
-import "./App.css";
+const BEAT_PATTERNS = ["basic","hiphop","halftime"];
 
 const KEYS = ["q","w","e","r","a","s","d","f","u","i","o","p","j","k","l",";"];
 const GRID_SIZE = KEYS.length;
@@ -79,7 +81,7 @@ async function trimSilence(blob) {
   return new Blob([buffer], { type: "audio/wav" });
 }
 
-const Pad = forwardRef(function Pad({ label }, ref) {
+const Pad = forwardRef(function Pad({ label, shiftHeld }, ref) {
   const [hue, setHue] = useState(null);
   const [playing, setPlaying] = useState(false);
   const [recording, setRecording] = useState(false);
@@ -162,11 +164,11 @@ const Pad = forwardRef(function Pad({ label }, ref) {
 
   const trigger = useCallback(
     (shiftKey) => {
-      if (shiftKey) { stopPlayback(); return; }
+      if (shiftKey) { reset(); return; }
       if (hasSound) { play(); return; }
       startRecording();
     },
-    [hasSound, play, startRecording, stopPlayback],
+    [hasSound, play, startRecording, reset],
   );
 
   const release = useCallback(() => {
@@ -193,7 +195,7 @@ const Pad = forwardRef(function Pad({ label }, ref) {
     }
   }, [stopPlayback]);
 
-  useImperativeHandle(ref, () => ({ trigger, release, reset, getState, loadState }), [trigger, release, reset, getState, loadState]);
+  useImperativeHandle(ref, () => ({ trigger, release, reset, stopPlayback, getState, loadState }), [trigger, release, reset, stopPlayback, getState, loadState]);
 
   const onPointerDown = useCallback((e) => trigger(e.shiftKey), [trigger]);
   const onPointerUp = useCallback(() => release(), [release]);
@@ -216,15 +218,60 @@ const Pad = forwardRef(function Pad({ label }, ref) {
       onPointerUp={onPointerUp}
       onPointerLeave={onPointerUp}
     >
+      {shiftHeld && hasSound && <span className="pad-delete">-</span>}
       {recording ? "REC" : label}
     </button>
   );
 });
 
+function BeatControls({ beatOn, onToggleBeat }) {
+  const [tempo, setTempo] = useState(100);
+
+  const handleTempo = useCallback((e) => {
+    const v = Number(e.target.value);
+    setTempo(v);
+    setBpm(v);
+  }, []);
+
+  const handlePattern = useCallback((e) => {
+    setPattern(e.target.value);
+  }, []);
+
+  return (
+    <div className="beat-controls">
+      <button type="button" className={`beat-toggle ${beatOn ? "on" : ""}`} onClick={onToggleBeat}>
+        {beatOn ? "stop" : "beat"}
+      </button>
+      <label className="slider-label beat-tempo">
+        {tempo} bpm
+        <input type="range" min="60" max="180" value={tempo} onChange={handleTempo} />
+      </label>
+      <label className="select-label">
+        pattern
+        <select defaultValue="basic" onChange={handlePattern}>
+          {BEAT_PATTERNS.map((p) => <option key={p} value={p}>{p}</option>)}
+        </select>
+      </label>
+    </div>
+  );
+}
+
 export default function App() {
   const padRefs = useRef(KEYS.map(() => ({ current: null })));
   const heldKeys = useRef(new Set());
   const [savedGrids, setSavedGrids] = useState([]);
+  const [shiftHeld, setShiftHeld] = useState(false);
+  const [beatOn, setBeatOn] = useState(false);
+
+  const toggleBeat = useCallback(async () => {
+    if (isPlaying()) {
+      stopBeat();
+      setBeatOn(false);
+    } else {
+      await startBeat();
+      setBeatOn(true);
+    }
+  }, []);
 
   const refreshList = useCallback(async () => {
     setSavedGrids(await listGrids());
@@ -243,11 +290,17 @@ export default function App() {
 
   useEffect(() => {
     const onKeyDown = (e) => {
+      if (e.key === "Shift") { setShiftHeld(true); return; }
       if (e.repeat || e.metaKey || e.ctrlKey) return;
-      if (e.key === " ") {
+      if (e.key === "Escape") {
         e.preventDefault();
         padRefs.current.forEach((r) => r.current?.release());
-        padRefs.current.forEach((r) => r.current?.trigger(true));
+        padRefs.current.forEach((r) => r.current?.stopPlayback());
+        return;
+      }
+      if (e.key === " ") {
+        e.preventDefault();
+        toggleBeat();
         return;
       }
       const idx = KEYS.indexOf(e.key.toLowerCase());
@@ -257,6 +310,7 @@ export default function App() {
       padRefs.current[idx].current?.trigger(e.shiftKey);
     };
     const onKeyUp = (e) => {
+      if (e.key === "Shift") { setShiftHeld(false); return; }
       const key = e.key.toLowerCase();
       if (!heldKeys.current.has(key)) return;
       heldKeys.current.delete(key);
@@ -270,7 +324,7 @@ export default function App() {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
     };
-  }, []);
+  }, [toggleBeat]);
 
   const clearAll = useCallback(() => {
     padRefs.current.forEach((r) => r.current?.reset());
@@ -355,7 +409,7 @@ export default function App() {
       <main>
         <div className="board">
           {KEYS.map((key, i) => (
-            <Pad key={key} label={key} ref={padRefs.current[i]} />
+            <Pad key={key} label={key} shiftHeld={shiftHeld} ref={padRefs.current[i]} />
           ))}
           <button type="button" className="board-btn save-btn" onClick={handleSave}>
             save
@@ -364,6 +418,7 @@ export default function App() {
             clear all
           </button>
         </div>
+        <BeatControls beatOn={beatOn} onToggleBeat={toggleBeat} />
       </main>
     </div>
   );
