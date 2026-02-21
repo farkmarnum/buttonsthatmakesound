@@ -145,8 +145,24 @@ main {
   color: #fff;
 }
 
+.erase-btn {
+  grid-column: 3;
+  background: #282828;
+  color: #777;
+}
+
+.erase-btn:hover {
+  background: #333;
+  color: #fff;
+}
+
+.erase-btn.on {
+  background: #3a2020;
+  color: #e77;
+}
+
 .clear-btn {
-  grid-column: 3 / 5;
+  grid-column: 4;
   background: #282828;
   color: #777;
 }

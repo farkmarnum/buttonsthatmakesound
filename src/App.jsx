@@ -30,7 +30,7 @@ async function trimSilence(blob) {
 
   const trimmed = new AudioContext();
   const len = end - start + 1;
-  const fadeSamples = Math.min(Math.ceil(buf.sampleRate * 0.001), len); // 1ms
+  const fadeSamples = Math.min(Math.ceil(buf.sampleRate * 0.002), len); // 2ms
   const trimBuf = trimmed.createBuffer(buf.numberOfChannels, len, buf.sampleRate);
   for (let ch = 0; ch < buf.numberOfChannels; ch++) {
     const slice = buf.getChannelData(ch).slice(start, end + 1);
@@ -84,19 +84,18 @@ const Pad = forwardRef(function Pad({ label, shiftHeld }, ref) {
   const [hue, setHue] = useState(null);
   const [playing, setPlaying] = useState(false);
   const [recording, setRecording] = useState(false);
+  const [hasSound, setHasSound] = useState(false);
   const audioRef = useRef(null);   // blob URL
   const blobRef = useRef(null);    // raw blob for serialization
   const mediaRecRef = useRef(null);
   const playerRef = useRef(null);
   const recordingRef = useRef(false);
 
-  const hasSound = audioRef.current !== null;
-
   const decodedRef = useRef(null); // cached AudioBuffer
 
   const stopPlayback = useCallback(() => {
     if (playerRef.current) {
-      try { playerRef.current.stop(); } catch {}
+      try { playerRef.current.stop(); } catch { /* already stopped */ }
       playerRef.current.disconnect();
       playerRef.current = null;
     }
@@ -134,6 +133,7 @@ const Pad = forwardRef(function Pad({ label, shiftHeld }, ref) {
         blobRef.current = trimmed;
         decodedRef.current = null;
         audioRef.current = URL.createObjectURL(trimmed);
+        setHasSound(true);
         setHue(randomHue());
       }
       setRecording(false);
@@ -158,6 +158,7 @@ const Pad = forwardRef(function Pad({ label, shiftHeld }, ref) {
     audioRef.current = null;
     blobRef.current = null;
     decodedRef.current = null;
+    setHasSound(false);
     setHue(null);
   }, [stopPlayback]);
 
@@ -186,17 +187,19 @@ const Pad = forwardRef(function Pad({ label, shiftHeld }, ref) {
     if (state?.blob) {
       blobRef.current = state.blob;
       audioRef.current = URL.createObjectURL(state.blob);
+      setHasSound(true);
       setHue(state.hue);
     } else {
       blobRef.current = null;
       audioRef.current = null;
+      setHasSound(false);
       setHue(null);
     }
   }, [stopPlayback]);
 
   useImperativeHandle(ref, () => ({ trigger, release, reset, stopPlayback, getState, loadState }), [trigger, release, reset, stopPlayback, getState, loadState]);
 
-  const onPointerDown = useCallback((e) => trigger(e.shiftKey), [trigger]);
+  const onPointerDown = useCallback(() => trigger(shiftHeld), [trigger, shiftHeld]);
   const onPointerUp = useCallback(() => release(), [release]);
 
   let bg;
@@ -255,11 +258,13 @@ function BeatControls({ beatOn, onToggleBeat }) {
   );
 }
 
+const padRefs = KEYS.map(() => ({ current: null }));
+
 export default function App() {
-  const padRefs = useRef(KEYS.map(() => ({ current: null })));
   const heldKeys = useRef(new Set());
   const [savedGrids, setSavedGrids] = useState([]);
   const [shiftHeld, setShiftHeld] = useState(false);
+  const shiftRef = useRef(false);
   const [beatOn, setBeatOn] = useState(false);
 
   const toggleBeat = useCallback(async () => {
@@ -276,11 +281,11 @@ export default function App() {
     setSavedGrids(await listGrids());
   }, []);
 
-  useEffect(() => { refreshList(); }, [refreshList]);
+  useEffect(() => { listGrids().then(setSavedGrids); }, []);
 
   useEffect(() => {
     const onBeforeUnload = (e) => {
-      const hasWork = padRefs.current.some((r) => r.current?.getState()?.blob);
+      const hasWork = padRefs.some((r) => r.current?.getState()?.blob);
       if (hasWork) e.preventDefault();
     };
     window.addEventListener("beforeunload", onBeforeUnload);
@@ -289,12 +294,16 @@ export default function App() {
 
   useEffect(() => {
     const onKeyDown = (e) => {
-      if (e.key === "Shift") { setShiftHeld(true); return; }
+      if (e.key === "Shift") {
+        shiftRef.current = !shiftRef.current;
+        setShiftHeld(shiftRef.current);
+        return;
+      }
       if (e.repeat || e.metaKey || e.ctrlKey) return;
       if (e.key === "Escape") {
         e.preventDefault();
-        padRefs.current.forEach((r) => r.current?.release());
-        padRefs.current.forEach((r) => r.current?.stopPlayback());
+        padRefs.forEach((r) => r.current?.release());
+        padRefs.forEach((r) => r.current?.stopPlayback());
         return;
       }
       if (e.key === " ") {
@@ -306,16 +315,16 @@ export default function App() {
       if (idx === -1) return;
       e.preventDefault();
       heldKeys.current.add(e.key.toLowerCase());
-      padRefs.current[idx].current?.trigger(e.shiftKey);
+      padRefs[idx].current?.trigger(shiftRef.current);
     };
     const onKeyUp = (e) => {
-      if (e.key === "Shift") { setShiftHeld(false); return; }
+      if (e.key === "Shift") return;
       const key = e.key.toLowerCase();
       if (!heldKeys.current.has(key)) return;
       heldKeys.current.delete(key);
       const idx = KEYS.indexOf(key);
       if (idx === -1) return;
-      padRefs.current[idx].current?.release();
+      padRefs[idx].current?.release();
     };
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
@@ -326,13 +335,13 @@ export default function App() {
   }, [toggleBeat]);
 
   const clearAll = useCallback(() => {
-    padRefs.current.forEach((r) => r.current?.reset());
+    padRefs.forEach((r) => r.current?.reset());
   }, []);
 
   const handleSave = useCallback(async () => {
     const name = prompt("Name this grid:");
     if (!name) return;
-    const pads = padRefs.current.map((r) => r.current?.getState() ?? { hue: null, blob: null });
+    const pads = padRefs.map((r) => r.current?.getState() ?? { hue: null, blob: null });
     await saveGrid(crypto.randomUUID(), name, pads);
     refreshList();
   }, [refreshList]);
@@ -341,7 +350,7 @@ export default function App() {
     const grid = await loadGrid(id);
     if (!grid) return;
     grid.pads.forEach((state, i) => {
-      padRefs.current[i].current?.loadState(state);
+      padRefs[i].current?.loadState(state);
     });
   }, []);
 
@@ -412,13 +421,17 @@ export default function App() {
       <main>
         <div className="board">
           {KEYS.map((key, i) => (
-            <Pad key={key} label={key} shiftHeld={shiftHeld} ref={padRefs.current[i]} />
+            <Pad key={key} label={key} shiftHeld={shiftHeld} ref={padRefs[i]} />
           ))}
           <button type="button" className="board-btn save-btn" onClick={handleSave}>
             save
           </button>
+          <button type="button" className={`board-btn erase-btn ${shiftHeld ? "on" : ""}`}
+            onClick={() => setShiftHeld((v) => { shiftRef.current = !v; return !v; })}>
+            erase
+          </button>
           <button type="button" className="board-btn clear-btn" onClick={clearAll}>
-            clear all
+            clear
           </button>
         </div>
         <BeatControls beatOn={beatOn} onToggleBeat={toggleBeat} />
