@@ -9,8 +9,7 @@ const SCALE_TYPES = ["chromatic","major","minor","pentatonic"];
 const BEAT_PATTERNS = ["basic","hiphop","halftime"];
 
 const KEYS = ["q","w","e","r","a","s","d","f","u","i","o","p","j","k","l",";"];
-const GRID_SIZE = KEYS.length;
-const SILENCE_THRESHOLD = 0.02;
+const SILENCE_THRESHOLD = 0.04;
 
 function randomHue() {
   return Math.floor(Math.random() * 360);
@@ -354,55 +353,59 @@ export default function App() {
   return (
     <div className="app">
       <aside className="sidebar">
-        <h2>Saved</h2>
-        {savedGrids.length === 0 && <p className="empty">No saved grids</p>}
-        {savedGrids.map((g) => (
-          <div key={g.id} className="saved-item">
-            <button type="button" className="saved-name" onClick={() => handleLoad(g.id)}>
-              {g.name}
-            </button>
-            <button type="button" className="saved-delete" onClick={() => handleDelete(g.id)}>
-              &times;
-            </button>
+        <div className="sidebar-inner">
+          <h2>Saved</h2>
+          <div className="saved-list">
+            {savedGrids.length === 0 && <p className="empty">No saved grids</p>}
+            {savedGrids.map((g) => (
+              <div key={g.id} className="saved-item">
+                <button type="button" className="saved-name" onClick={() => handleLoad(g.id)}>
+                  {g.name}
+                </button>
+                <button type="button" className="saved-delete" onClick={() => handleDelete(g.id)}>
+                  &times;
+                </button>
+              </div>
+            ))}
           </div>
-        ))}
-        <div className="controls">
-          <label className="slider-label">
-            compress
-            <input type="range" min="0" max="100" defaultValue="30"
-              onChange={(e) => setCompressorMix(e.target.value / 100)} />
-          </label>
-          <label className="slider-label">
-            reverb
-            <input type="range" min="0" max="100" defaultValue="0"
-              onChange={(e) => setReverbMix(e.target.value / 100)} />
-          </label>
-          <label className="slider-label">
-            retune
-            <input type="range" min="0" max="100" defaultValue="0"
-              onChange={(e) => setRetune(e.target.value / 100)} />
-          </label>
-          <div className="scale-controls">
-            <label className="select-label">
-              key
-              <select defaultValue="0" onChange={(e) => {
-                const tonic = parseInt(e.target.value);
-                const scaleEl = e.target.closest(".scale-controls").querySelector("[data-role=scale]");
-                setScale(tonic, scaleEl.value);
-              }}>
-                {NOTE_NAMES.map((n, i) => <option key={n} value={i}>{n}</option>)}
-              </select>
+          <div className="controls">
+            <label className="slider-label">
+              compress
+              <input type="range" min="0" max="100" defaultValue="30"
+                onChange={(e) => setCompressorMix(e.target.value / 100)} />
             </label>
-            <label className="select-label">
-              scale
-              <select defaultValue="chromatic" data-role="scale" onChange={(e) => {
-                const scale = e.target.value;
-                const tonicEl = e.target.closest(".scale-controls").querySelector("select:not([data-role])");
-                setScale(parseInt(tonicEl.value), scale);
-              }}>
-                {SCALE_TYPES.map((s) => <option key={s} value={s}>{s}</option>)}
-              </select>
+            <label className="slider-label">
+              reverb
+              <input type="range" min="0" max="100" defaultValue="0"
+                onChange={(e) => setReverbMix(e.target.value / 100)} />
             </label>
+            <label className="slider-label">
+              retune
+              <input type="range" min="0" max="100" defaultValue="0"
+                onChange={(e) => setRetune(e.target.value / 100)} />
+            </label>
+            <div className="scale-controls">
+              <label className="select-label">
+                key
+                <select defaultValue="0" onChange={(e) => {
+                  const tonic = parseInt(e.target.value);
+                  const scaleEl = e.target.closest(".scale-controls").querySelector("[data-role=scale]");
+                  setScale(tonic, scaleEl.value);
+                }}>
+                  {NOTE_NAMES.map((n, i) => <option key={n} value={i}>{n}</option>)}
+                </select>
+              </label>
+              <label className="select-label">
+                scale
+                <select defaultValue="chromatic" data-role="scale" onChange={(e) => {
+                  const scale = e.target.value;
+                  const tonicEl = e.target.closest(".scale-controls").querySelector("select:not([data-role])");
+                  setScale(parseInt(tonicEl.value), scale);
+                }}>
+                  {SCALE_TYPES.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </label>
+            </div>
           </div>
         </div>
       </aside>
