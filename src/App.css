@@ -10,6 +10,8 @@
 .sidebar {
   width: 160px;
   flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .sidebar h2 {
@@ -124,4 +126,27 @@ main {
 .clear-btn:hover {
   background: #444;
   color: #fff;
+}
+
+.controls {
+  margin-top: auto;
+  padding-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.slider-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  color: #777;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.slider-label input[type="range"] {
+  width: 100%;
+  accent-color: #888;
 }

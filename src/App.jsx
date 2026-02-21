@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect, useImperativeHandle, forwardRef } from "react";
 import { saveGrid, listGrids, loadGrid, deleteGrid } from "./db.js";
+import { getAudioContext, getInputNode, setCompressorMix, setReverbMix } from "./audio.js";
 import "./App.css";
 
 const KEYS = ["q","w","e","r","a","s","d","f","u","i","o","p","j","k","l",";"];
@@ -25,9 +26,15 @@ async function trimSilence(blob) {
 
   const trimmed = new AudioContext();
   const len = end - start + 1;
+  const fadeSamples = Math.min(Math.ceil(buf.sampleRate * 0.001), len); // 1ms
   const trimBuf = trimmed.createBuffer(buf.numberOfChannels, len, buf.sampleRate);
   for (let ch = 0; ch < buf.numberOfChannels; ch++) {
-    trimBuf.copyToChannel(buf.getChannelData(ch).slice(start, end + 1), ch);
+    const slice = buf.getChannelData(ch).slice(start, end + 1);
+    for (let i = 0; i < fadeSamples; i++) {
+      slice[i] *= i / fadeSamples;
+      slice[slice.length - 1 - i] *= i / fadeSamples;
+    }
+    trimBuf.copyToChannel(slice, ch);
   }
   trimmed.close();
 
@@ -81,22 +88,31 @@ const Pad = forwardRef(function Pad({ label }, ref) {
 
   const hasSound = audioRef.current !== null;
 
+  const decodedRef = useRef(null); // cached AudioBuffer
+
   const stopPlayback = useCallback(() => {
     if (playerRef.current) {
-      playerRef.current.pause();
-      playerRef.current.currentTime = 0;
+      try { playerRef.current.stop(); } catch {}
+      playerRef.current.disconnect();
       playerRef.current = null;
     }
     setPlaying(false);
   }, []);
 
-  const play = useCallback(() => {
+  const play = useCallback(async () => {
     stopPlayback();
-    const a = new Audio(audioRef.current);
-    a.onended = () => setPlaying(false);
-    playerRef.current = a;
+    const actx = getAudioContext();
+    if (!decodedRef.current && blobRef.current) {
+      decodedRef.current = await actx.decodeAudioData(await blobRef.current.arrayBuffer());
+    }
+    if (!decodedRef.current) return;
+    const src = actx.createBufferSource();
+    src.buffer = decodedRef.current;
+    src.connect(getInputNode());
+    src.onended = () => setPlaying(false);
+    playerRef.current = src;
     setPlaying(true);
-    a.play();
+    src.start();
   }, [stopPlayback]);
 
   const startRecording = useCallback(async () => {
@@ -112,6 +128,7 @@ const Pad = forwardRef(function Pad({ label }, ref) {
         const trimmed = await trimSilence(raw);
         if (audioRef.current) URL.revokeObjectURL(audioRef.current);
         blobRef.current = trimmed;
+        decodedRef.current = null;
         audioRef.current = URL.createObjectURL(trimmed);
         setHue(randomHue());
       }
@@ -136,6 +153,7 @@ const Pad = forwardRef(function Pad({ label }, ref) {
     if (audioRef.current) URL.revokeObjectURL(audioRef.current);
     audioRef.current = null;
     blobRef.current = null;
+    decodedRef.current = null;
     setHue(null);
   }, [stopPlayback]);
 
@@ -160,6 +178,7 @@ const Pad = forwardRef(function Pad({ label }, ref) {
   const loadState = useCallback((state) => {
     stopPlayback();
     if (audioRef.current) URL.revokeObjectURL(audioRef.current);
+    decodedRef.current = null;
     if (state?.blob) {
       blobRef.current = state.blob;
       audioRef.current = URL.createObjectURL(state.blob);
@@ -275,6 +294,18 @@ export default function App() {
             </button>
           </div>
         ))}
+        <div className="controls">
+          <label className="slider-label">
+            compress
+            <input type="range" min="0" max="100" defaultValue="30"
+              onChange={(e) => setCompressorMix(e.target.value / 100)} />
+          </label>
+          <label className="slider-label">
+            reverb
+            <input type="range" min="0" max="100" defaultValue="0"
+              onChange={(e) => setReverbMix(e.target.value / 100)} />
+          </label>
+        </div>
       </aside>
       <main>
         <div className="board">
