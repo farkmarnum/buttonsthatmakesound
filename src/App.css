@@ -1,3 +1,7 @@
+.app * {
+  user-select: none;
+}
+
 .app {
   display: flex;
   flex-direction: column;
