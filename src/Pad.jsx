@@ -129,7 +129,10 @@ export const Pad = forwardRef(function Pad({ label, shiftHeld, onErase, onChange
     trigger, release, stopPlayback, getState, loadState,
   }), [trigger, release, stopPlayback, getState, loadState]);
 
-  const onPointerDown = useCallback(() => trigger(shiftHeld), [trigger, shiftHeld]);
+  const onPointerDown = useCallback((e) => {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    trigger(shiftHeld);
+  }, [trigger, shiftHeld]);
   const onPointerUp = useCallback(() => release(), [release]);
 
   let bg;
@@ -148,7 +151,7 @@ export const Pad = forwardRef(function Pad({ label, shiftHeld, onErase, onChange
       style={{ background: bg }}
       onPointerDown={onPointerDown}
       onPointerUp={onPointerUp}
-      onPointerLeave={onPointerUp}
+      onLostPointerCapture={onPointerUp}
     >
       {shiftHeld && hasSound && <span className="pad-delete">-</span>}
       {recording ? "REC" : <span className="key-label">{label}</span>}

@@ -43,7 +43,7 @@
   transition: background 0.15s;
   user-select: none;
   -webkit-user-select: none;
-  touch-action: manipulation;
+  touch-action: none;
   color: white; /* this is just the REC label */
 }
 
