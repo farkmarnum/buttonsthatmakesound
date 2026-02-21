@@ -251,47 +251,17 @@ function StartModal({ onReady }) {
   );
 }
 
-function BeatControls({ beatOn, onToggleBeat }) {
-  const [tempo, setTempo] = useState(100);
-  const [volume, setVolume] = useState(60);
-
-  const handleTempo = useCallback((e) => {
-    const v = Number(e.target.value);
-    setTempo(v);
-    setBpm(v);
-  }, []);
-
-  const handleVolume = useCallback((e) => {
-    const v = Number(e.target.value);
-    setVolume(v);
-    setBeatVolume(v / 100);
-  }, []);
-
-  const handlePattern = useCallback((e) => {
-    setPattern(e.target.value);
-  }, []);
-
+function Panel({ open, onClose, title, children }) {
+  if (!open) return null;
   return (
-    <div className="beat-controls">
-      <button type="button" className={`beat-toggle ${beatOn ? "on" : ""}`} onClick={onToggleBeat}>
-        {beatOn ? "stop" : "beat"}
-      </button>
-      <div className="beat-sliders">
-        <label className="slider-label">
-          {tempo} bpm
-          <input type="range" min="60" max="180" value={tempo} onChange={handleTempo} />
-        </label>
-        <label className="slider-label">
-          vol {volume}%
-          <input type="range" min="0" max="100" value={volume} onChange={handleVolume} />
-        </label>
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="panel" onClick={(e) => e.stopPropagation()}>
+        <div className="panel-header">
+          <h2>{title}</h2>
+          <button type="button" className="panel-close" onClick={onClose}>&times;</button>
+        </div>
+        {children}
       </div>
-      <label className="select-label">
-        pattern
-        <select defaultValue="basic" onChange={handlePattern}>
-          {BEAT_PATTERNS.map((p) => <option key={p} value={p}>{p}</option>)}
-        </select>
-      </label>
     </div>
   );
 }
@@ -305,8 +275,13 @@ export default function App() {
   const [shiftHeld, setShiftHeld] = useState(false);
   const shiftRef = useRef(false);
   const [beatOn, setBeatOn] = useState(false);
+  const [openPanel, setOpenPanel] = useState(null); // "saved" | "fx" | "beat" | null
+  const [tempo, setTempo] = useState(100);
+  const [beatVol, setBeatVol] = useState(60);
 
-
+  const togglePanel = useCallback((name) => {
+    setOpenPanel((cur) => cur === name ? null : name);
+  }, []);
 
   const toggleBeat = useCallback(async () => {
     if (isPlaying()) {
@@ -343,6 +318,7 @@ export default function App() {
       if (e.repeat || e.metaKey || e.ctrlKey) return;
       if (e.key === "Escape") {
         e.preventDefault();
+        if (openPanel) { setOpenPanel(null); return; }
         padRefs.forEach((r) => r.current?.release());
         padRefs.forEach((r) => r.current?.stopPlayback());
         return;
@@ -373,7 +349,7 @@ export default function App() {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
     };
-  }, [toggleBeat]);
+  }, [toggleBeat, openPanel]);
 
   const checkEraseOff = useCallback(() => {
     const anyHaveSound = padRefs.some((r) => r.current?.getState()?.blob);
@@ -403,6 +379,7 @@ export default function App() {
     grid.pads.forEach((state, i) => {
       padRefs[i].current?.loadState(state);
     });
+    setOpenPanel(null);
   }, []);
 
   const handleDelete = useCallback(async (id) => {
@@ -414,81 +391,112 @@ export default function App() {
 
   return (
     <div className="app">
-      <aside className="sidebar">
-        <div className="sidebar-inner">
-          <h2>Saved</h2>
-          <div className="saved-list">
-            {savedGrids.length === 0 && <p className="empty">No saved grids</p>}
-            {savedGrids.map((g) => (
-              <div key={g.id} className="saved-item">
-                <button type="button" className="saved-name" onClick={() => handleLoad(g.id)}>
-                  {g.name}
-                </button>
-                <button type="button" className="saved-delete" onClick={() => handleDelete(g.id)}>
-                  &times;
-                </button>
-              </div>
-            ))}
-          </div>
-          <div className="controls">
-            <label className="slider-label">
-              compress
-              <input type="range" min="0" max="100" defaultValue="30"
-                onChange={(e) => setCompressorMix(e.target.value / 100)} />
-            </label>
-            <label className="slider-label">
-              reverb
-              <input type="range" min="0" max="100" defaultValue="0"
-                onChange={(e) => setReverbMix(e.target.value / 100)} />
-            </label>
-            <label className="slider-label">
-              retune
-              <input type="range" min="0" max="100" defaultValue="0"
-                onChange={(e) => setRetune(e.target.value / 100)} />
-            </label>
-            <div className="scale-controls">
-              <label className="select-label">
-                key
-                <select defaultValue="0" onChange={(e) => {
-                  const tonic = parseInt(e.target.value);
-                  const scaleEl = e.target.closest(".scale-controls").querySelector("[data-role=scale]");
-                  setScale(tonic, scaleEl.value);
-                }}>
-                  {NOTE_NAMES.map((n, i) => <option key={n} value={i}>{n}</option>)}
-                </select>
-              </label>
-              <label className="select-label">
-                scale
-                <select defaultValue="chromatic" data-role="scale" onChange={(e) => {
-                  const scale = e.target.value;
-                  const tonicEl = e.target.closest(".scale-controls").querySelector("select:not([data-role])");
-                  setScale(parseInt(tonicEl.value), scale);
-                }}>
-                  {SCALE_TYPES.map((s) => <option key={s} value={s}>{s}</option>)}
-                </select>
-              </label>
+      <div className="board">
+        {KEYS.map((key, i) => (
+          <Pad key={key} label={key} shiftHeld={shiftHeld} onErase={checkEraseOff} ref={padRefs[i]} />
+        ))}
+        <button type="button" className="board-btn save-btn" onClick={handleSave}>save</button>
+        <button type="button" className={`board-btn erase-btn ${shiftHeld ? "on" : ""}`}
+          onClick={() => setShiftHeld((v) => { shiftRef.current = !v; return !v; })}>
+          erase
+        </button>
+        <button type="button" className="board-btn clear-btn" onClick={clearAll}>clear</button>
+      </div>
+      <div className="toolbar">
+        <button type="button" className={`toolbar-btn ${openPanel === "saved" ? "active" : ""}`}
+          onClick={() => togglePanel("saved")}>saved</button>
+        <button type="button" className={`toolbar-btn ${openPanel === "fx" ? "active" : ""}`}
+          onClick={() => togglePanel("fx")}>fx</button>
+        <button type="button" className={`toolbar-btn ${beatOn ? "on" : ""}`}
+          onClick={toggleBeat}>{beatOn ? "stop" : "beat"}</button>
+        <button type="button" className={`toolbar-btn ${openPanel === "beat" ? "active" : ""}`}
+          onClick={() => togglePanel("beat")}>bpm</button>
+      </div>
+
+      <Panel open={openPanel === "saved"} onClose={() => setOpenPanel(null)} title="Saved Grids">
+        <div className="saved-list">
+          {savedGrids.length === 0 && <p className="empty">No saved grids yet</p>}
+          {savedGrids.map((g) => (
+            <div key={g.id} className="saved-item">
+              <button type="button" className="saved-name" onClick={() => handleLoad(g.id)}>
+                {g.name}
+              </button>
+              <button type="button" className="saved-delete" onClick={() => handleDelete(g.id)}>
+                &times;
+              </button>
             </div>
+          ))}
+        </div>
+      </Panel>
+
+      <Panel open={openPanel === "fx"} onClose={() => setOpenPanel(null)} title="Effects">
+        <div className="controls">
+          <label className="slider-label">
+            compress
+            <input type="range" min="0" max="100" defaultValue="30"
+              onChange={(e) => setCompressorMix(e.target.value / 100)} />
+          </label>
+          <label className="slider-label">
+            reverb
+            <input type="range" min="0" max="100" defaultValue="0"
+              onChange={(e) => setReverbMix(e.target.value / 100)} />
+          </label>
+          <label className="slider-label">
+            retune
+            <input type="range" min="0" max="100" defaultValue="0"
+              onChange={(e) => setRetune(e.target.value / 100)} />
+          </label>
+          <div className="scale-controls">
+            <label className="select-label">
+              key
+              <select defaultValue="0" onChange={(e) => {
+                const tonic = parseInt(e.target.value);
+                const scaleEl = e.target.closest(".scale-controls").querySelector("[data-role=scale]");
+                setScale(tonic, scaleEl.value);
+              }}>
+                {NOTE_NAMES.map((n, i) => <option key={n} value={i}>{n}</option>)}
+              </select>
+            </label>
+            <label className="select-label">
+              scale
+              <select defaultValue="chromatic" data-role="scale" onChange={(e) => {
+                const scale = e.target.value;
+                const tonicEl = e.target.closest(".scale-controls").querySelector("select:not([data-role])");
+                setScale(parseInt(tonicEl.value), scale);
+              }}>
+                {SCALE_TYPES.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </label>
           </div>
         </div>
-      </aside>
-      <main>
-        <div className="board">
-          {KEYS.map((key, i) => (
-            <Pad key={key} label={key} shiftHeld={shiftHeld} onErase={checkEraseOff} ref={padRefs[i]} />
-          ))}
-          <button type="button" className="board-btn save-btn" onClick={handleSave}>
-            save
-          </button>
-          <button type="button" className={`board-btn erase-btn ${shiftHeld ? "on" : ""}`}
-            onClick={() => setShiftHeld((v) => { shiftRef.current = !v; return !v; })}>
-            erase
-          </button>
-          <button type="button" className="board-btn clear-btn" onClick={clearAll}>
-            clear
-          </button>
+      </Panel>
+
+      <Panel open={openPanel === "beat"} onClose={() => setOpenPanel(null)} title="Beat Settings">
+        <div className="controls">
+          <label className="slider-label">
+            {tempo} bpm
+            <input type="range" min="60" max="180" value={tempo} onChange={(e) => {
+              const v = Number(e.target.value);
+              setTempo(v);
+              setBpm(v);
+            }} />
+          </label>
+          <label className="slider-label">
+            volume {beatVol}%
+            <input type="range" min="0" max="100" value={beatVol} onChange={(e) => {
+              const v = Number(e.target.value);
+              setBeatVol(v);
+              setBeatVolume(v / 100);
+            }} />
+          </label>
+          <label className="select-label">
+            pattern
+            <select defaultValue="basic" onChange={(e) => setPattern(e.target.value)}>
+              {BEAT_PATTERNS.map((p) => <option key={p} value={p}>{p}</option>)}
+            </select>
+          </label>
         </div>
-        <BeatControls beatOn={beatOn} onToggleBeat={toggleBeat} />
-      </main>
+      </Panel>
     </div>
   );
 }

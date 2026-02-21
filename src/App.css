@@ -1,94 +1,22 @@
 .app {
-  display: grid;
-  grid-template-columns: 160px 1fr;
-  width: 100%;
-  max-width: 740px;
-  margin: 0 auto;
-  gap: 24px;
-  padding: 32px;
-}
-
-.sidebar {
-  position: relative;
-}
-
-.sidebar-inner {
-  position: absolute;
-  inset: 0;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
-}
-
-.sidebar h2 {
-  font-size: 11px;
-  color: #666;
-  margin-bottom: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-
-.saved-list {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding-right: 4px;
-}
-
-.sidebar .empty {
-  font-size: 12px;
-  color: #444;
-}
-
-.saved-item {
-  display: flex;
   align-items: center;
-  gap: 2px;
-  margin-bottom: 3px;
+  padding: 16px;
+  gap: 12px;
 }
 
-.saved-name {
-  flex: 1;
-  text-align: left;
-  background: #232323;
-  border: none;
-  border-radius: 4px;
-  color: #aaa;
-  padding: 5px 8px;
-  font-size: 12px;
-  cursor: pointer;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.saved-name:hover {
-  background: #2e2e2e;
-  color: #fff;
-}
-
-.saved-delete {
-  background: none;
-  border: none;
-  color: #444;
-  font-size: 14px;
-  cursor: pointer;
-  padding: 2px 4px;
-  line-height: 1;
-}
-
-.saved-delete:hover {
-  color: #f55;
-}
-
-main {
-  flex: 1;
+@media (min-width: 400px) {
+  .app {
+    padding: 32px;
+  }
 }
 
 .board {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 10px;
+  width: 100%;
   max-width: 480px;
 }
 
@@ -172,13 +100,154 @@ main {
   color: #fff;
 }
 
-.controls {
-  margin-top: auto;
-  padding-top: 12px;
-  border-top: 1px solid #282828;
+/* Toolbar */
+
+.toolbar {
+  display: flex;
+  gap: 6px;
+  width: 100%;
+  max-width: 480px;
+  margin-top: 4px;
+}
+
+.toolbar-btn {
+  flex: 1;
+  padding: 10px;
+  border: none;
+  border-radius: 8px;
+  background: #232323;
+  color: #666;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  transition: background 0.15s, color 0.15s;
+}
+
+.toolbar-btn:hover {
+  background: #2e2e2e;
+  color: #ccc;
+}
+
+.toolbar-btn.active {
+  background: #2a2a3a;
+  color: #aaf;
+}
+
+.toolbar-btn.on {
+  background: #3a2020;
+  color: #e77;
+}
+
+/* Panels */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.panel {
+  background: #222;
+  border-radius: 14px;
+  padding: 20px 24px;
+  width: 320px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.panel-header h2 {
+  font-size: 13px;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.panel-close {
+  background: none;
+  border: none;
+  color: #555;
+  font-size: 20px;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+}
+
+.panel-close:hover {
+  color: #fff;
+}
+
+/* Saved list */
+
+.saved-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 3px;
+}
+
+.saved-list .empty {
+  font-size: 13px;
+  color: #555;
+}
+
+.saved-item {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.saved-name {
+  flex: 1;
+  text-align: left;
+  background: #2a2a2a;
+  border: none;
+  border-radius: 4px;
+  color: #aaa;
+  padding: 8px 10px;
+  font-size: 13px;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.saved-name:hover {
+  background: #333;
+  color: #fff;
+}
+
+.saved-delete {
+  background: none;
+  border: none;
+  color: #444;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px 6px;
+  line-height: 1;
+}
+
+.saved-delete:hover {
+  color: #f55;
+}
+
+/* Controls (shared by fx and beat panels) */
+
+.controls {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .slider-label {
@@ -198,7 +267,7 @@ main {
 
 .scale-controls {
   display: flex;
-  gap: 6px;
+  gap: 8px;
 }
 
 .select-label {
@@ -213,12 +282,12 @@ main {
 }
 
 .select-label select {
-  background: #232323;
+  background: #2a2a2a;
   border: 1px solid #333;
   border-radius: 4px;
   color: #aaa;
-  padding: 4px;
-  font-size: 11px;
+  padding: 6px;
+  font-size: 12px;
   cursor: pointer;
 }
 
@@ -226,64 +295,7 @@ main {
   border-color: #666;
 }
 
-.beat-controls {
-  display: flex;
-  align-items: flex-end;
-  gap: 10px;
-  margin-top: 16px;
-  padding-top: 14px;
-  border-top: 1px solid #232323;
-  max-width: 480px;
-}
-
-.beat-toggle {
-  padding: 8px 16px;
-  border: none;
-  border-radius: 8px;
-  background: #232323;
-  color: #777;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  white-space: nowrap;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.beat-toggle:hover {
-  background: #2e2e2e;
-  color: #fff;
-}
-
-.beat-toggle.on {
-  background: #3a2020;
-  color: #e77;
-}
-
-.beat-sliders {
-  flex: 1;
-  display: flex;
-  gap: 10px;
-}
-
-.beat-sliders .slider-label {
-  flex: 1;
-}
-
-.beat-controls .select-label {
-  flex: 0 0 auto;
-  min-width: 90px;
-}
-
-.modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.8);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 100;
-}
+/* Start modal */
 
 .modal {
   background: #222;
