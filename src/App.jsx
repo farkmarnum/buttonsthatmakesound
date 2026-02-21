@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect, useImperativeHandle, forwardRef } from "react";
 import { saveGrid, listGrids, loadGrid, deleteGrid } from "./db.js";
-import { getAudioContext, getInputNode, setCompressorMix, setReverbMix } from "./audio.js";
+import { getAudioContext, getInputNode, setCompressorMix, setReverbMix, setRetune } from "./audio.js";
 import "./App.css";
 
 const KEYS = ["q","w","e","r","a","s","d","f","u","i","o","p","j","k","l",";"];
@@ -101,14 +101,14 @@ const Pad = forwardRef(function Pad({ label }, ref) {
 
   const play = useCallback(async () => {
     stopPlayback();
-    const actx = getAudioContext();
+    const actx = await getAudioContext();
     if (!decodedRef.current && blobRef.current) {
       decodedRef.current = await actx.decodeAudioData(await blobRef.current.arrayBuffer());
     }
     if (!decodedRef.current) return;
     const src = actx.createBufferSource();
     src.buffer = decodedRef.current;
-    src.connect(getInputNode());
+    src.connect(await getInputNode());
     src.onended = () => setPlaying(false);
     playerRef.current = src;
     setPlaying(true);
@@ -304,6 +304,11 @@ export default function App() {
             reverb
             <input type="range" min="0" max="100" defaultValue="0"
               onChange={(e) => setReverbMix(e.target.value / 100)} />
+          </label>
+          <label className="slider-label">
+            retune
+            <input type="range" min="0" max="100" defaultValue="0"
+              onChange={(e) => setRetune(e.target.value / 100)} />
           </label>
         </div>
       </aside>

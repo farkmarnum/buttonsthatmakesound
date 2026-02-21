@@ -1,8 +1,10 @@
 // Shared audio graph:
-// source -> compressor -> dryGain -\
-//                      -> reverbSend -> convolver -> wetGain -\-> destination
+// source -> autotuneNode -> compressor -> makeupGain -> dryGain -> destination
+//                                                    -> reverbSend -> convolver -> wetGain -> destination
 
-let ctx, compressor, makeupGain, dryGain, wetGain, convolver, reverbSend;
+let ctx, autotuneNode, compressor, makeupGain, dryGain, wetGain, convolver, reverbSend;
+let inputNode; // the node sources should connect to
+let initPromise;
 
 function generateIR(ctx, duration = 2, decay = 2) {
   const len = ctx.sampleRate * duration;
@@ -16,26 +18,27 @@ function generateIR(ctx, duration = 2, decay = 2) {
   return buf;
 }
 
-// estimate makeup gain from compression amount (0-1)
-// as threshold drops and ratio rises, we boost to compensate
 function computeMakeup(amount) {
   const threshold = -6 + amount * -30;
   const ratio = 1 + amount * 11;
-  // approximate gain reduction at -12dBFS input level, with extra boost
   const over = Math.max(0, -12 - threshold);
   const reductionDb = over - over / ratio;
   return Math.pow(10, (reductionDb * 1.5) / 20);
 }
 
-function ensureCtx() {
+async function init() {
   if (ctx) return;
   ctx = new AudioContext();
+
+  await ctx.audioWorklet.addModule("/autotune-processor.js");
+  autotuneNode = new AudioWorkletNode(ctx, "autotune-processor", {
+    parameterData: { retune: 0 },
+  });
 
   compressor = ctx.createDynamicsCompressor();
   compressor.knee.value = 12;
   compressor.attack.value = 0.003;
   compressor.release.value = 0.15;
-  // defaults matching slider at 30%
   compressor.ratio.value = 1 + 0.3 * 11;
   compressor.threshold.value = -6 + 0.3 * -30;
 
@@ -54,32 +57,43 @@ function ensureCtx() {
   convolver = ctx.createConvolver();
   convolver.buffer = generateIR(ctx);
 
+  autotuneNode.connect(compressor);
   compressor.connect(makeupGain);
   makeupGain.connect(dryGain).connect(ctx.destination);
   makeupGain.connect(reverbSend).connect(convolver).connect(wetGain).connect(ctx.destination);
+
+  inputNode = autotuneNode;
 }
 
-export function getAudioContext() {
-  ensureCtx();
+function ensureCtx() {
+  if (!initPromise) initPromise = init();
+  return initPromise;
+}
+
+export async function getAudioContext() {
+  await ensureCtx();
   return ctx;
 }
 
-export function getInputNode() {
-  ensureCtx();
-  return compressor;
+export async function getInputNode() {
+  await ensureCtx();
+  return inputNode;
 }
 
-export function setCompressorMix(amount) {
-  // amount 0-1: 0 = no compression, 1 = full compression
-  ensureCtx();
+export async function setCompressorMix(amount) {
+  await ensureCtx();
   compressor.ratio.value = 1 + amount * 11;
   compressor.threshold.value = -6 + amount * -30;
   makeupGain.gain.value = computeMakeup(amount);
 }
 
-export function setReverbMix(amount) {
-  // amount 0-1: dry/wet crossfade
-  ensureCtx();
-  dryGain.gain.value = 1 - amount * 0.5; // keep some dry always
+export async function setReverbMix(amount) {
+  await ensureCtx();
+  dryGain.gain.value = 1 - amount * 0.5;
   wetGain.gain.value = amount;
+}
+
+export async function setRetune(amount) {
+  await ensureCtx();
+  autotuneNode.parameters.get("retune").value = amount;
 }
