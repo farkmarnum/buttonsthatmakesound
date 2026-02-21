@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect, useImperativeHandle, forwardRef } from "react";
-import { saveGrid, listGrids, loadGrid, deleteGrid } from "./db.js";
-import { getAudioContext, getInputNode, setCompressorMix, setReverbMix, setRetune, setScale, initAll, getMicStream } from "./audio.js";
+import { saveGrid, updateGrid, renameGrid, listGrids, loadGrid, deleteGrid, getActiveId, setActiveId } from "./db.js";
+import { getAudioContext, getInputNode, setCompressorMix, setReverbMix, setRetune, setScale, initAll, getMicStream, flushAutotune } from "./audio.js";
 import { startBeat, stopBeat, isPlaying, setBpm, setPattern, setBeatVolume } from "./beat.js";
 import "./App.css";
 
@@ -80,7 +80,7 @@ async function trimSilence(blob) {
   return new Blob([buffer], { type: "audio/wav" });
 }
 
-const Pad = forwardRef(function Pad({ label, shiftHeld, onErase }, ref) {
+const Pad = forwardRef(function Pad({ label, shiftHeld, onErase, onChanged }, ref) {
   const [hue, setHue] = useState(null);
   const [playing, setPlaying] = useState(false);
   const [recording, setRecording] = useState(false);
@@ -99,6 +99,7 @@ const Pad = forwardRef(function Pad({ label, shiftHeld, onErase }, ref) {
       playerRef.current.disconnect();
       playerRef.current = null;
     }
+    flushAutotune();
     setPlaying(false);
   }, []);
 
@@ -135,6 +136,7 @@ const Pad = forwardRef(function Pad({ label, shiftHeld, onErase }, ref) {
         audioRef.current = URL.createObjectURL(trimmed);
         setHasSound(true);
         setHue(randomHue());
+        onChanged?.();
       }
       setRecording(false);
       recordingRef.current = false;
@@ -143,7 +145,7 @@ const Pad = forwardRef(function Pad({ label, shiftHeld, onErase }, ref) {
     mr.start();
     setRecording(true);
     recordingRef.current = true;
-  }, [stopPlayback]);
+  }, [stopPlayback, onChanged]);
 
   const stopRecording = useCallback(() => {
     if (mediaRecRef.current?.state === "recording") {
@@ -268,6 +270,21 @@ function Panel({ open, onClose, title, children }) {
 
 const padRefs = KEYS.map(() => ({ current: null }));
 
+function nextGridName(grids) {
+  const used = new Set(grids.map((g) => g.name));
+  let n = 1;
+  while (used.has(`Grid ${n}`)) n++;
+  return `Grid ${n}`;
+}
+
+function getPadStates() {
+  return padRefs.map((r) => r.current?.getState() ?? { hue: null, blob: null });
+}
+
+function loadPadStates(pads) {
+  pads.forEach((state, i) => { padRefs[i].current?.loadState(state); });
+}
+
 export default function App() {
   const [ready, setReady] = useState(false);
   const heldKeys = useRef(new Set());
@@ -275,9 +292,56 @@ export default function App() {
   const [shiftHeld, setShiftHeld] = useState(false);
   const shiftRef = useRef(false);
   const [beatOn, setBeatOn] = useState(false);
-  const [openPanel, setOpenPanel] = useState(null); // "saved" | "fx" | "beat" | null
+  const [openPanel, setOpenPanel] = useState(null);
   const [tempo, setTempo] = useState(100);
   const [beatVol, setBeatVol] = useState(60);
+  const [hasAnySounds, setHasAnySounds] = useState(false);
+
+  // Active grid tracking
+  const [activeId, setActiveIdState] = useState(null);
+  const [activeName, setActiveName] = useState("Grid 1");
+  const activeIdRef = useRef(null);
+  const autoSaveTimer = useRef(null);
+  const [renamingId, setRenamingId] = useState(null);
+  const savedGridsRef = useRef([]);
+
+  const refreshList = useCallback(async () => {
+    const grids = await listGrids();
+    savedGridsRef.current = grids;
+    setSavedGrids(grids);
+  }, []);
+
+  // Auto-save: debounced persist of current grid
+  const autoSave = useCallback(() => {
+    clearTimeout(autoSaveTimer.current);
+    autoSaveTimer.current = setTimeout(async () => {
+      const pads = getPadStates();
+      const id = activeIdRef.current;
+      if (id) {
+        await updateGrid(id, pads);
+      } else {
+        // Create a new grid
+        const newId = crypto.randomUUID();
+        const name = nextGridName(savedGridsRef.current);
+        await saveGrid(newId, name, pads);
+        await setActiveId(newId);
+        activeIdRef.current = newId;
+        setActiveIdState(newId);
+        setActiveName(name);
+      }
+      refreshList();
+    }, 800);
+  }, [refreshList]);
+
+  const recheckSounds = useCallback(() => {
+    setHasAnySounds(padRefs.some((r) => r.current?.getState()?.blob));
+  }, []);
+
+  // Notify auto-save after pad changes
+  const onPadChanged = useCallback(() => {
+    recheckSounds();
+    autoSave();
+  }, [autoSave, recheckSounds]);
 
   const togglePanel = useCallback((name) => {
     setOpenPanel((cur) => cur === name ? null : name);
@@ -293,29 +357,43 @@ export default function App() {
     }
   }, []);
 
-  const refreshList = useCallback(async () => {
-    setSavedGrids(await listGrids());
-  }, []);
-
-  useEffect(() => { listGrids().then(setSavedGrids); }, []);
-
+  // Load last active grid on startup
   useEffect(() => {
-    const onBeforeUnload = (e) => {
-      const hasWork = padRefs.some((r) => r.current?.getState()?.blob);
-      if (hasWork) e.preventDefault();
-    };
-    window.addEventListener("beforeunload", onBeforeUnload);
-    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+    (async () => {
+      const grids = await listGrids();
+      savedGridsRef.current = grids;
+      setSavedGrids(grids);
+      const id = await getActiveId();
+      if (id) {
+        const grid = await loadGrid(id);
+        if (grid) {
+          activeIdRef.current = id;
+          setActiveIdState(id);
+          setActiveName(grid.name);
+          // Defer loading until pads are mounted
+          setTimeout(() => {
+            loadPadStates(grid.pads);
+            setHasAnySounds(grid.pads.some((p) => p?.blob));
+          }, 0);
+          return;
+        }
+      }
+      // No active grid — start fresh
+      activeIdRef.current = null;
+      setActiveIdState(null);
+      setActiveName(nextGridName(grids));
+    })();
   }, []);
 
   useEffect(() => {
     const onKeyDown = (e) => {
-      if (e.key === "Shift") {
+      if (e.repeat || e.metaKey || e.ctrlKey) return;
+      if (e.key.toLowerCase() === "x") {
+        e.preventDefault();
         shiftRef.current = !shiftRef.current;
         setShiftHeld(shiftRef.current);
         return;
       }
-      if (e.repeat || e.metaKey || e.ctrlKey) return;
       if (e.key === "Escape") {
         e.preventDefault();
         if (openPanel) { setOpenPanel(null); return; }
@@ -335,7 +413,6 @@ export default function App() {
       padRefs[idx].current?.trigger(shiftRef.current);
     };
     const onKeyUp = (e) => {
-      if (e.key === "Shift") return;
       const key = e.key.toLowerCase();
       if (!heldKeys.current.has(key)) return;
       heldKeys.current.delete(key);
@@ -357,54 +434,95 @@ export default function App() {
       shiftRef.current = false;
       setShiftHeld(false);
     }
-  }, []);
+    onPadChanged();
+  }, [onPadChanged]);
 
-  const clearAll = useCallback(() => {
+  // "New" — blank grid, new slot
+  const handleNew = useCallback(async () => {
     padRefs.forEach((r) => r.current?.reset());
     shiftRef.current = false;
     setShiftHeld(false);
-  }, []);
+    const newId = crypto.randomUUID();
+    const name = nextGridName(savedGridsRef.current);
+    await saveGrid(newId, name, getPadStates());
+    await setActiveId(newId);
+    activeIdRef.current = newId;
+    setActiveIdState(newId);
+    setActiveName(name);
+    refreshList();
+  }, [refreshList]);
 
-  const handleSave = useCallback(async () => {
+  // "Save as" — copy current grid to a new named slot
+  const handleSaveAs = useCallback(async () => {
     const name = prompt("Name this grid:");
     if (!name) return;
-    const pads = padRefs.map((r) => r.current?.getState() ?? { hue: null, blob: null });
-    await saveGrid(crypto.randomUUID(), name, pads);
+    const pads = getPadStates();
+    const newId = crypto.randomUUID();
+    await saveGrid(newId, name, pads);
+    await setActiveId(newId);
+    activeIdRef.current = newId;
+    setActiveIdState(newId);
+    setActiveName(name);
     refreshList();
   }, [refreshList]);
 
   const handleLoad = useCallback(async (id) => {
     const grid = await loadGrid(id);
     if (!grid) return;
-    grid.pads.forEach((state, i) => {
-      padRefs[i].current?.loadState(state);
-    });
+    loadPadStates(grid.pads);
+    await setActiveId(id);
+    activeIdRef.current = id;
+    setActiveIdState(id);
+    setActiveName(grid.name);
     setOpenPanel(null);
-  }, []);
+    recheckSounds();
+  }, [recheckSounds]);
 
   const handleDelete = useCallback(async (id) => {
     await deleteGrid(id);
+    if (activeIdRef.current === id) {
+      // Deleted the active grid — start fresh
+      padRefs.forEach((r) => r.current?.reset());
+      activeIdRef.current = null;
+      setActiveIdState(null);
+      await setActiveId(null);
+      // Name will update after refreshList, compute with current knowledge
+      const remaining = savedGridsRef.current.filter((g) => g.id !== id);
+      setActiveName(nextGridName(remaining));
+    }
     refreshList();
+  }, [refreshList]);
+
+  const handleRename = useCallback(async (id, newName) => {
+    if (!newName.trim()) return;
+    await renameGrid(id, newName.trim());
+    if (activeIdRef.current === id) setActiveName(newName.trim());
+    refreshList();
+    setRenamingId(null);
   }, [refreshList]);
 
   if (!ready) return <StartModal onReady={() => setReady(true)} />;
 
   return (
     <div className="app">
+      <div className="grid-name">{activeName}</div>
       <div className="board">
         {KEYS.map((key, i) => (
-          <Pad key={key} label={key} shiftHeld={shiftHeld} onErase={checkEraseOff} ref={padRefs[i]} />
+          <Pad key={key} label={key} shiftHeld={shiftHeld} onErase={checkEraseOff}
+            onChanged={onPadChanged} ref={padRefs[i]} />
         ))}
-        <button type="button" className="board-btn save-btn" onClick={handleSave}>save</button>
+        <button type="button" className="board-btn save-btn" onClick={handleSaveAs}>save as</button>
         <button type="button" className={`board-btn erase-btn ${shiftHeld ? "on" : ""}`}
+          disabled={!hasAnySounds}
           onClick={() => setShiftHeld((v) => { shiftRef.current = !v; return !v; })}>
           erase
         </button>
-        <button type="button" className="board-btn clear-btn" onClick={clearAll}>clear</button>
+        <button type="button" className="board-btn clear-btn" disabled={!hasAnySounds}
+          onClick={handleNew}>new</button>
       </div>
       <div className="toolbar">
         <button type="button" className={`toolbar-btn ${openPanel === "saved" ? "active" : ""}`}
-          onClick={() => togglePanel("saved")}>saved</button>
+          onClick={() => togglePanel("saved")}>load</button>
         <button type="button" className={`toolbar-btn ${openPanel === "fx" ? "active" : ""}`}
           onClick={() => togglePanel("fx")}>fx</button>
         <button type="button" className={`toolbar-btn ${beatOn ? "on" : ""}`}
@@ -417,10 +535,22 @@ export default function App() {
         <div className="saved-list">
           {savedGrids.length === 0 && <p className="empty">No saved grids yet</p>}
           {savedGrids.map((g) => (
-            <div key={g.id} className="saved-item">
-              <button type="button" className="saved-name" onClick={() => handleLoad(g.id)}>
-                {g.name}
-              </button>
+            <div key={g.id} className={`saved-item ${g.id === activeId ? "active" : ""}`}>
+              {renamingId === g.id ? (
+                <form className="rename-form" onSubmit={(e) => {
+                  e.preventDefault();
+                  handleRename(g.id, e.target.elements.name.value);
+                }}>
+                  <input name="name" defaultValue={g.name} autoFocus
+                    onBlur={(e) => handleRename(g.id, e.target.value)} />
+                </form>
+              ) : (
+                <button type="button" className="saved-name" onClick={() => handleLoad(g.id)}
+                  onDoubleClick={(e) => { e.preventDefault(); setRenamingId(g.id); }}>
+                  {g.id === activeId && <span className="active-dot" />}
+                  {g.name}
+                </button>
+              )}
               <button type="button" className="saved-delete" onClick={() => handleDelete(g.id)}>
                 &times;
               </button>
@@ -438,12 +568,12 @@ export default function App() {
           </label>
           <label className="slider-label">
             reverb
-            <input type="range" min="0" max="100" defaultValue="0"
+            <input type="range" min="0" max="100" defaultValue="50"
               onChange={(e) => setReverbMix(e.target.value / 100)} />
           </label>
           <label className="slider-label">
             retune
-            <input type="range" min="0" max="100" defaultValue="0"
+            <input type="range" min="0" max="100" defaultValue="50"
               onChange={(e) => setRetune(e.target.value / 100)} />
           </label>
           <div className="scale-controls">

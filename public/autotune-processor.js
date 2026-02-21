@@ -182,6 +182,13 @@ class AutotuneProcessor extends AudioWorkletProcessor {
     this.port.onmessage = (e) => {
       if (e.data.type === "setScale") {
         this.notes = buildNoteTable(e.data.tonic, e.data.scale);
+      } else if (e.data.type === "flush") {
+        this.fifoIn.fill(0);
+        this.fifoOut.fill(0);
+        this.lastPhase.fill(0);
+        this.sumPhase.fill(0);
+        this.fifoPos = FFT_SIZE - HOP;
+        this.currentShift = 1.0;
       }
     };
   }

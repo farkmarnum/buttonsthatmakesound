@@ -34,7 +34,7 @@ async function init() {
 
   await ctx.audioWorklet.addModule("/autotune-processor.js");
   autotuneNode = new AudioWorkletNode(ctx, "autotune-processor", {
-    parameterData: { retune: 0 },
+    parameterData: { retune: 0.5 },
   });
 
   compressor = ctx.createDynamicsCompressor();
@@ -48,10 +48,10 @@ async function init() {
   makeupGain.gain.value = computeMakeup(0.3);
 
   dryGain = ctx.createGain();
-  dryGain.gain.value = 1;
+  dryGain.gain.value = 1 - 0.5 * 0.5;  // reverb default 50%
 
   wetGain = ctx.createGain();
-  wetGain.gain.value = 0;
+  wetGain.gain.value = 0.5;  // reverb default 50%
 
   reverbSend = ctx.createGain();
   reverbSend.gain.value = 1;
@@ -117,6 +117,10 @@ export async function setRetune(amount) {
 export async function setScale(tonic, scale) {
   await ensureCtx();
   autotuneNode.port.postMessage({ type: "setScale", tonic, scale });
+}
+
+export function flushAutotune() {
+  if (autotuneNode) autotuneNode.port.postMessage({ type: "flush" });
 }
 
 // Shared mic stream — acquired once, kept warm for instant recording

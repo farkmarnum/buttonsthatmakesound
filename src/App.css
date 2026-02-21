@@ -12,6 +12,13 @@
   }
 }
 
+.grid-name {
+  font-size: 16px;
+  color: #555;
+  letter-spacing: 0.04em;
+  margin: 4px 0;
+}
+
 .board {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -28,11 +35,18 @@
   cursor: pointer;
   font-size: 20px;
   font-weight: 700;
-  color: rgba(255, 255, 255, 0.3);
   text-transform: uppercase;
   transition: background 0.15s;
   user-select: none;
   -webkit-user-select: none;
+  color: transparent;
+}
+
+/* if there's a keyboard, show letters: */
+@media screen and (pointer: fine) and (hover: hover) {
+  .pad {
+    color: rgba(255, 255, 255, 0.3);
+  }
 }
 
 .pad:active {
@@ -60,6 +74,12 @@
   cursor: pointer;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+
+.board-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+  pointer-events: none;
 }
 
 .save-btn {
@@ -240,6 +260,40 @@
 
 .saved-delete:hover {
   color: #f55;
+}
+
+.saved-item.active .saved-name {
+  background: #2a2a3a;
+  color: #ccf;
+}
+
+.active-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #88f;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+.rename-form {
+  flex: 1;
+}
+
+.rename-form input {
+  width: 100%;
+  background: #1a1a1a;
+  border: 1px solid #555;
+  border-radius: 4px;
+  color: #fff;
+  padding: 7px 9px;
+  font-size: 13px;
+  outline: none;
+}
+
+.rename-form input:focus {
+  border-color: #88f;
 }
 
 /* Controls (shared by fx and beat panels) */
