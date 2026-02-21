@@ -151,7 +151,7 @@ export const Pad = forwardRef(function Pad({ label, shiftHeld, onErase, onChange
       onPointerLeave={onPointerUp}
     >
       {shiftHeld && hasSound && <span className="pad-delete">-</span>}
-      {recording ? "REC" : label}
+      {recording ? "REC" : <span className="key-label">{label}</span>}
     </button>
   );
 });

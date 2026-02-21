@@ -44,12 +44,16 @@
   user-select: none;
   -webkit-user-select: none;
   touch-action: manipulation;
+  color: white; /* this is just the REC label */
+}
+
+.key-label {
   color: transparent;
 }
 
 /* if there's a keyboard, show letters: */
 @media screen and (pointer: fine) and (hover: hover) {
-  .pad {
+  .key-label {
     color: rgba(255, 255, 255, 0.3);
   }
 }
