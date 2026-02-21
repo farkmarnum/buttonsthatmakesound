@@ -156,6 +156,12 @@ export async function acquireMic() {
   return micStream;
 }
 
+export function releaseMic() {
+  if (!micStream) return;
+  micStream.getTracks().forEach((t) => t.stop());
+  micStream = null;
+}
+
 export function getMicStream() {
   if (!micStream) throw new Error("Microphone not available. Please grant mic access and reload.");
   return micStream;
@@ -169,6 +175,17 @@ export async function checkMicPermission() {
     } catch { /* some browsers don't support this query */ }
   }
   return "prompt";
+}
+
+// Release mic when page is hidden, re-acquire when visible
+if (typeof document !== "undefined") {
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      releaseMic();
+    } else if (ctx) {
+      acquireMic();
+    }
+  });
 }
 
 // Call this from the start modal — initializes audio context + mic in one gesture
