@@ -1,4 +1,4 @@
-const SILENCE_THRESHOLD = 0.075;
+const SILENCE_THRESHOLD = 0.1;
 
 export async function trimSilence(blob) {
   const ctx = new OfflineAudioContext(1, 1, 44100);
@@ -13,7 +13,7 @@ export async function trimSilence(blob) {
   if (start >= end) return blob;
 
   const len = end - start + 1;
-  const fadeSamples = Math.min(Math.ceil(buf.sampleRate * 0.002), len);
+  const fadeSamples = Math.min(Math.ceil(buf.sampleRate * 0.005), len);
   // AudioBuffer constructor avoids creating a throwaway AudioContext
   const trimBuf = new AudioBuffer({
     numberOfChannels: buf.numberOfChannels,
