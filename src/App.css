@@ -73,9 +73,11 @@
   transition: background 0.15s, color 0.15s, opacity 0.15s;
 }
 
-.corner-pill:hover {
-  background: var(--bg-btn-hover);
-  color: var(--text-hover);
+@media (hover: hover) {
+  .corner-pill:hover {
+    background: var(--bg-btn-hover);
+    color: var(--text-hover);
+  }
 }
 
 .corner-pill:disabled {
@@ -100,8 +102,10 @@
   transition: opacity 0.15s;
 }
 
-.rename-btn:hover {
-  opacity: 1;
+@media (hover: hover) {
+  .rename-btn:hover {
+    opacity: 1;
+  }
 }
 
 
@@ -178,9 +182,11 @@
   transition: background 0.15s, color 0.15s;
 }
 
-.toolbar-btn:hover {
-  background: var(--bg-btn-hover);
-  color: var(--text-hover);
+@media (hover: hover) {
+  .toolbar-btn:hover {
+    background: var(--bg-btn-hover);
+    color: var(--text-hover);
+  }
 }
 
 .toolbar-btn.active {
@@ -238,8 +244,10 @@
   line-height: 1;
 }
 
-.panel-close:hover {
-  color: #fff;
+@media (hover: hover) {
+  .panel-close:hover {
+    color: #fff;
+  }
 }
 
 /* Saved list */
@@ -260,9 +268,11 @@
   transition: border-color 0.15s, color 0.15s;
 }
 
-.new-grid-btn:hover {
-  border-color: #888;
-  color: #ccc;
+@media (hover: hover) {
+  .new-grid-btn:hover {
+    border-color: #888;
+    color: #ccc;
+  }
 }
 
 .saved-list {
@@ -297,9 +307,11 @@
   white-space: nowrap;
 }
 
-.saved-name:hover {
-  background: var(--bg-btn-hover);
-  color: var(--text-hover);
+@media (hover: hover) {
+  .saved-name:hover {
+    background: var(--bg-btn-hover);
+    color: var(--text-hover);
+  }
 }
 
 .saved-delete {
@@ -312,8 +324,10 @@
   line-height: 1;
 }
 
-.saved-delete:hover {
-  color: #f55;
+@media (hover: hover) {
+  .saved-delete:hover {
+    color: #f55;
+  }
 }
 
 .saved-item.active .saved-name {
@@ -402,8 +416,10 @@
   cursor: pointer;
 }
 
-.select-label select:hover {
-  border-color: var(--text-muted);
+@media (hover: hover) {
+  .select-label select:hover {
+    border-color: var(--text-muted);
+  }
 }
 
 /* Start modal */
@@ -447,6 +463,8 @@
   transition: opacity 0.15s;
 }
 
-.modal-start:hover {
-  opacity: 0.85;
+@media (hover: hover) {
+  .modal-start:hover {
+    opacity: 0.85;
+  }
 }

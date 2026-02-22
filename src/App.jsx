@@ -31,7 +31,7 @@ import "./App.css";
 function StopIcon() {
   return (
     <svg
-      style={{ marginTop: "2px" }}
+      style={{ marginTop: "4px" }}
       width="14"
       height="14"
       viewBox="0 0 12 12"
@@ -45,7 +45,7 @@ function StopIcon() {
 function TrashIcon() {
   return (
     <svg
-      style={{ marginTop: "2px" }}
+      style={{ marginTop: "4px" }}
       width="14"
       height="14"
       viewBox="0 0 24 24"
